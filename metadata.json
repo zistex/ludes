@@ -1,0 +1,6 @@
+{
+  "name": "LUDES",
+  "description": "LUDES - Makanan Enak Harga Hemat, Sebelum Ludes. Ambil sendiri di warung dan toko terdekat.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
