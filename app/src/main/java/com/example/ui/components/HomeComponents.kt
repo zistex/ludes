@@ -27,9 +27,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccessTime
-import androidx.compose.material.icons.filled.AccountBalanceWallet
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.LiveTv
@@ -46,8 +43,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.VerticalDivider
-import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -56,7 +51,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -70,7 +64,6 @@ import com.example.R
 import com.example.data.ProductEntity
 import com.example.data.formatCompactCount
 import com.example.data.formatRupiah
-import com.example.data.formatRupiahShort
 import com.example.ui.SisaEnakUiState
 import com.example.ui.theme.ActionOrange
 import com.example.ui.theme.ActionOrangeBorder
@@ -101,21 +94,24 @@ fun computeDiscountPercent(product: ProductEntity): Int {
 }
 
 /**
- * GoFood-inspired Top Emerald Backdrop with Floating Search Pill & Overlapping Wallet/Impact Bar.
+ * GoFood-inspired Top Emerald Backdrop with Floating Search Pill & Overlapping Hero Promo Slider
+ * (replaces the previous Saldo LUDES area now housed in the top navbar).
  */
 @Composable
-fun GoFoodTopHeaderSection(
+fun GoFoodHeroHeaderWithSlider(
     uiState: SisaEnakUiState,
     onOpenSearch: () -> Unit,
-    onOpenWallet: () -> Unit,
+    onClickPromoSlide: () -> Unit,
+    onClickWalletSlide: () -> Unit,
+    onClickLiveSlide: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(modifier = modifier.fillMaxWidth()) {
-        // Curved emerald gradient backdrop at top
+        // Curved emerald gradient backdrop behind greeting, search pill, and top half of hero slider
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(146.dp)
+                .height(198.dp)
                 .clip(RoundedCornerShape(bottomStart = 28.dp, bottomEnd = 28.dp))
                 .background(
                     Brush.verticalGradient(
@@ -130,7 +126,7 @@ fun GoFoodTopHeaderSection(
             // Subtle decorative atmosphere circles
             Box(
                 modifier = Modifier
-                    .size(130.dp)
+                    .size(134.dp)
                     .align(Alignment.TopEnd)
                     .offset(x = 36.dp, y = (-32).dp)
                     .clip(CircleShape)
@@ -138,7 +134,7 @@ fun GoFoodTopHeaderSection(
             )
             Box(
                 modifier = Modifier
-                    .size(84.dp)
+                    .size(88.dp)
                     .align(Alignment.BottomStart)
                     .offset(x = (-24).dp, y = 20.dp)
                     .clip(CircleShape)
@@ -149,12 +145,13 @@ fun GoFoodTopHeaderSection(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
                 .padding(top = 12.dp)
         ) {
             // Contextual greeting & pickup-only badge
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -207,6 +204,7 @@ fun GoFoodTopHeaderSection(
                 border = BorderStroke(1.dp, Color.White),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
                     .heightIn(min = 50.dp)
                     .clip(RoundedCornerShape(50))
                     .clickable { onOpenSearch() }
@@ -260,129 +258,15 @@ fun GoFoodTopHeaderSection(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(14.dp))
 
-            // GoPay-style Overlapping Wallet & Food-Rescue Impact Card
-            Surface(
-                shape = RoundedCornerShape(18.dp),
-                color = BgWhite,
-                border = BorderStroke(1.dp, SurfaceBorder),
-                shadowElevation = 3.dp,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp, vertical = 11.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    // Left: Wallet Balance (tappable)
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onOpenWallet() }
-                            .padding(horizontal = 4.dp, vertical = 2.dp)
-                            .testTag("wallet_quick_card"),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(FreshGreenSoft),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.AccountBalanceWallet,
-                                contentDescription = "Saldo LUDES",
-                                tint = FreshGreenDark,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(9.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Saldo LUDES",
-                                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-                                color = TextGray,
-                                maxLines = 1
-                            )
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = formatRupiah(uiState.userPrefs.walletBalanceRp),
-                                    style = MaterialTheme.typography.labelLarge.copy(
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    ),
-                                    color = TextBlack,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Icon(
-                                    imageVector = Icons.Filled.ChevronRight,
-                                    contentDescription = null,
-                                    tint = FreshGreenDark,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    VerticalDivider(
-                        thickness = 1.dp,
-                        color = SurfaceBorder,
-                        modifier = Modifier
-                            .height(34.dp)
-                            .padding(horizontal = 6.dp)
-                    )
-
-                    // Right: Impact & Savings Summary
-                    Row(
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 4.dp, vertical = 2.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(ActionOrangeSoft),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Eco,
-                                contentDescription = null,
-                                tint = ActionOrangeDark,
-                                modifier = Modifier.size(19.dp)
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(9.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${uiState.userPrefs.bagsRescued} Kantong Diselamatkan",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold
-                                ),
-                                color = TextGray,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = "Hemat ${formatRupiahShort(uiState.userPrefs.totalSavedRp)}",
-                                style = MaterialTheme.typography.labelLarge.copy(
-                                    fontSize = 14.sp,
-                                    fontWeight = FontWeight.ExtraBold
-                                ),
-                                color = FreshGreenDark,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
-            }
+            // Hero Slider Geser overlapping the curved emerald header bottom
+            GoFoodPromoBannerCarousel(
+                uiState = uiState,
+                onClickPromoSlide = onClickPromoSlide,
+                onClickWalletSlide = onClickWalletSlide,
+                onClickLiveSlide = onClickLiveSlide
+            )
         }
     }
 }
@@ -651,20 +535,27 @@ fun GoFoodPromoBannerCarousel(
                 }
 
                 else -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 164.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(
-                                Brush.linearGradient(
-                                    colors = listOf(FreshGreenDark, Color(0xFF16A34A), FreshGreen)
-                                )
-                            )
-                            .clickable { onClickWalletSlide() }
-                            .padding(16.dp)
+                    Surface(
+                        shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(1.5.dp, Color.White.copy(alpha = 0.55f)),
+                        shadowElevation = 4.dp,
+                        color = Color.Transparent,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 164.dp)
+                                .clip(RoundedCornerShape(22.dp))
+                                .background(
+                                    Brush.linearGradient(
+                                        colors = listOf(Color(0xFF065F46), FreshGreenDark, Color(0xFF16A34A))
+                                    )
+                                )
+                                .clickable { onClickWalletSlide() }
+                                .padding(16.dp)
+                        ) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
                             Surface(
                                 shape = RoundedCornerShape(50),
                                 color = Color.White.copy(alpha = 0.22f)
@@ -713,6 +604,7 @@ fun GoFoodPromoBannerCarousel(
                                         tint = FreshGreenDark,
                                         modifier = Modifier.size(13.dp)
                                     )
+                                    }
                                 }
                             }
                         }

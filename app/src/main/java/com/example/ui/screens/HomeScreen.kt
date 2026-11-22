@@ -53,8 +53,7 @@ import com.example.data.FoodCategory
 import com.example.data.ProductEntity
 import com.example.data.parseDistanceKm
 import com.example.ui.SisaEnakUiState
-import com.example.ui.components.GoFoodPromoBannerCarousel
-import com.example.ui.components.GoFoodTopHeaderSection
+import com.example.ui.components.GoFoodHeroHeaderWithSlider
 import com.example.ui.components.HorizontalCompactSwipeCard
 import com.example.ui.components.HorizontalFeaturedSwipeCard
 import com.example.ui.components.RigidGridProductCard
@@ -147,19 +146,11 @@ fun HomeScreen(
             contentPadding = PaddingValues(bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // 1. GoFood-Style Layered Emerald Header + Floating Search + Wallet/Impact Strip
+            // 1. GoFood-Style Layered Emerald Header + Floating Search + Overlapping Hero Slider
             item(key = "header_hero") {
-                GoFoodTopHeaderSection(
+                GoFoodHeroHeaderWithSlider(
                     uiState = uiState,
                     onOpenSearch = onOpenSearch,
-                    onOpenWallet = onOpenWallet
-                )
-            }
-
-            // 2. Swipeable Persuasive Branding & Promo Banner Carousel
-            item(key = "promo_carousel") {
-                GoFoodPromoBannerCarousel(
-                    uiState = uiState,
                     onClickPromoSlide = {
                         val firstMatch = uiState.products.firstOrNull { it.stock > 0 }
                         if (firstMatch != null) onOpenProductDetail(firstMatch)

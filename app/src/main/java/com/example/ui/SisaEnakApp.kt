@@ -175,7 +175,9 @@ fun SisaEnakApp(
                     location = uiState.userPrefs.location,
                     onLocationClick = { navController.navigate(Routes.LOCATION_PICKER) },
                     onBellClick = { navController.navigate(Routes.NOTIFICATIONS) },
-                    unreadNotificationCount = uiState.unreadNotificationCount
+                    unreadNotificationCount = uiState.unreadNotificationCount,
+                    walletBalanceRp = uiState.userPrefs.walletBalanceRp,
+                    onWalletClick = { navController.navigate(Routes.WALLET) }
                 )
             }
         },

@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -117,6 +118,8 @@ fun SisaEnakTopHeader(
     onLocationClick: () -> Unit,
     onBellClick: () -> Unit,
     unreadNotificationCount: Int = 0,
+    walletBalanceRp: Int = 0,
+    onWalletClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -128,86 +131,125 @@ fun SisaEnakTopHeader(
             modifier = Modifier
                 .fillMaxWidth()
                 .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            // Logo LUDES
+            // Logo LUDES + flexible Location Pill
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.testTag("header_logo")
+                modifier = Modifier.weight(1f)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(34.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(FreshGreen),
+                        .background(FreshGreen)
+                        .testTag("header_logo"),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = Icons.Filled.ShoppingBag,
                         contentDescription = "Logo LUDES",
                         tint = Color.White,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(19.dp)
                     )
                 }
+
                 Spacer(modifier = Modifier.width(8.dp))
-                Column {
-                    Text(
-                        text = "LUDES",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.ExtraBold
-                        ),
-                        color = TextBlack
-                    )
-                    Text(
-                        text = "Sebelum Ludes • Ambil Sendiri",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = FreshGreenDark
-                    )
+
+                Surface(
+                    shape = RoundedCornerShape(50),
+                    color = BgWhite,
+                    border = BorderStroke(1.dp, SurfaceBorder),
+                    modifier = Modifier
+                        .weight(1f, fill = false)
+                        .testTag("location_chip")
+                        .clip(RoundedCornerShape(50))
+                        .clickable { onLocationClick() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.LocationOn,
+                            contentDescription = "Lokasi",
+                            tint = ActionOrange,
+                            modifier = Modifier.size(14.dp)
+                        )
+                        Spacer(modifier = Modifier.width(3.dp))
+                        Text(
+                            text = location,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            ),
+                            color = TextBlack,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        Icon(
+                            imageVector = Icons.Filled.KeyboardArrowDown,
+                            contentDescription = "Ganti lokasi",
+                            tint = TextGray,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
                 }
             }
 
-            // Location pill + Notification bell
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Saldo LUDES pill + Notification bell
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     shape = RoundedCornerShape(50),
                     color = FreshGreenSoft,
                     border = BorderStroke(1.dp, FreshGreenBorder),
                     modifier = Modifier
-                        .testTag("location_chip")
+                        .testTag("navbar_wallet_chip")
                         .clip(RoundedCornerShape(50))
-                        .clickable { onLocationClick() }
+                        .clickable { onWalletClick() }
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            imageVector = Icons.Filled.LocationOn,
-                            contentDescription = "Lokasi",
+                            imageVector = Icons.Filled.AccountBalanceWallet,
+                            contentDescription = "Saldo LUDES",
                             tint = FreshGreenDark,
-                            modifier = Modifier.size(16.dp)
+                            modifier = Modifier.size(15.dp)
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = location,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = TextBlack,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "Ganti lokasi",
-                            tint = TextGray,
-                            modifier = Modifier.size(16.dp)
-                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Column {
+                            Text(
+                                text = "Saldo LUDES",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 9.sp,
+                                    lineHeight = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                ),
+                                color = FreshGreenDark,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = formatRupiah(walletBalanceRp),
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontSize = 11.sp,
+                                    lineHeight = 13.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                ),
+                                color = TextBlack,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.width(4.dp))
+                Spacer(modifier = Modifier.width(2.dp))
 
                 IconButton(
                     onClick = onBellClick,
@@ -220,7 +262,7 @@ fun SisaEnakTopHeader(
                             imageVector = Icons.Filled.Notifications,
                             contentDescription = "Notifikasi",
                             tint = TextBlack,
-                            modifier = Modifier.size(24.dp)
+                            modifier = Modifier.size(23.dp)
                         )
                         if (unreadNotificationCount > 0) {
                             Box(
