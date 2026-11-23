@@ -484,6 +484,24 @@ class SisaEnakViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    fun updateWithdrawAccount(
+        bankName: String,
+        accountNumber: String,
+        accountHolder: String
+    ) {
+        viewModelScope.launch {
+            repository.updateWithdrawAccount(bankName, accountNumber, accountHolder)
+            snackbarMessage.value = "Rekening penarikan ($bankName) berhasil disimpan"
+        }
+    }
+
+    fun clearWithdrawAccount() {
+        viewModelScope.launch {
+            repository.clearWithdrawAccount()
+            snackbarMessage.value = "Rekening penarikan tersimpan dihapus"
+        }
+    }
+
     fun topUpSaldo(amount: Int) {
         viewModelScope.launch {
             repository.topUpSaldo(amount)

@@ -20,22 +20,26 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Eco
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -43,27 +47,24 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.LiveTv
 import androidx.compose.material.icons.filled.LocationOn
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.LiveTv
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ReceiptLong
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.minimumInteractiveComponentSize
@@ -78,6 +79,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -92,6 +94,7 @@ import com.example.data.resolveFoodDrawable
 import com.example.ui.theme.ActionOrange
 import com.example.ui.theme.ActionOrangeDark
 import com.example.ui.theme.ActionOrangeSoft
+import com.example.ui.theme.BgLightGray
 import com.example.ui.theme.BgWhite
 import com.example.ui.theme.FreshGreen
 import com.example.ui.theme.FreshGreenBorder
@@ -120,161 +123,184 @@ fun SisaEnakTopHeader(
     unreadNotificationCount: Int = 0,
     walletBalanceRp: Int = 0,
     onWalletClick: () -> Unit = {},
+    isHomeTab: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val containerColor = if (isHomeTab) FreshGreenDark else BgWhite
+    val primaryTextColor = if (isHomeTab) Color.White else TextBlack
+    val secondaryTextColor = if (isHomeTab) Color.White.copy(alpha = 0.78f) else TextGray
+    val pinBgColor = if (isHomeTab) Color.White.copy(alpha = 0.16f) else ActionOrangeSoft
+    val pinTintColor = if (isHomeTab) Color.White else ActionOrangeDark
+
     Surface(
-        color = BgWhite,
-        shadowElevation = 2.dp,
+        color = containerColor,
+        shadowElevation = 0.dp,
         modifier = modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.statusBars)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            // Logo LUDES + flexible Location Pill
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Box(
+                // Left: Clean Editorial Location Selector
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(FreshGreen)
-                        .testTag("header_logo"),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.ShoppingBag,
-                        contentDescription = "Logo LUDES",
-                        tint = Color.White,
-                        modifier = Modifier.size(19.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(8.dp))
-
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = BgWhite,
-                    border = BorderStroke(1.dp, SurfaceBorder),
-                    modifier = Modifier
-                        .weight(1f, fill = false)
-                        .testTag("location_chip")
-                        .clip(RoundedCornerShape(50))
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
                         .clickable { onLocationClick() }
+                        .padding(vertical = 2.dp, horizontal = 2.dp)
+                        .testTag("location_chip")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(pinBgColor),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Filled.LocationOn,
                             contentDescription = "Lokasi",
-                            tint = ActionOrange,
-                            modifier = Modifier.size(14.dp)
-                        )
-                        Spacer(modifier = Modifier.width(3.dp))
-                        Text(
-                            text = location,
-                            style = MaterialTheme.typography.labelSmall.copy(
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            ),
-                            color = TextBlack,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Icon(
-                            imageVector = Icons.Filled.KeyboardArrowDown,
-                            contentDescription = "Ganti lokasi",
-                            tint = TextGray,
-                            modifier = Modifier.size(14.dp)
+                            tint = pinTintColor,
+                            modifier = Modifier.size(19.dp)
                         )
                     }
-                }
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // Saldo LUDES pill + Notification bell
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(
-                    shape = RoundedCornerShape(50),
-                    color = FreshGreenSoft,
-                    border = BorderStroke(1.dp, FreshGreenBorder),
-                    modifier = Modifier
-                        .testTag("navbar_wallet_chip")
-                        .clip(RoundedCornerShape(50))
-                        .clickable { onWalletClick() }
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.AccountBalanceWallet,
-                            contentDescription = "Saldo LUDES",
-                            tint = FreshGreenDark,
-                            modifier = Modifier.size(15.dp)
+                    Spacer(modifier = Modifier.width(9.dp))
+                    Column(modifier = Modifier.weight(1f, fill = false)) {
+                        Text(
+                            text = "Lokasi Ambil",
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 10.sp,
+                                lineHeight = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = secondaryTextColor,
+                            maxLines = 1
                         )
-                        Spacer(modifier = Modifier.width(5.dp))
-                        Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Saldo LUDES",
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    fontSize = 9.sp,
-                                    lineHeight = 10.sp,
-                                    fontWeight = FontWeight.Bold
+                                text = location,
+                                style = MaterialTheme.typography.titleSmall.copy(
+                                    fontSize = 14.sp,
+                                    lineHeight = 18.sp,
+                                    fontWeight = FontWeight.ExtraBold
                                 ),
-                                color = FreshGreenDark,
-                                maxLines = 1
+                                color = primaryTextColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
                             )
+                            Spacer(modifier = Modifier.width(2.dp))
+                            Icon(
+                                imageVector = Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Ganti lokasi",
+                                tint = primaryTextColor,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                // Right: Sleek Wallet Pill + Circular Notification Button
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (isHomeTab) BgWhite else FreshGreenSoft,
+                        border = BorderStroke(
+                            1.dp,
+                            if (isHomeTab) Color.White else FreshGreenBorder
+                        ),
+                        shadowElevation = if (isHomeTab) 2.dp else 0.dp,
+                        modifier = Modifier
+                            .testTag("navbar_wallet_chip")
+                            .clip(RoundedCornerShape(50))
+                            .clickable { onWalletClick() }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(start = 9.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AccountBalanceWallet,
+                                contentDescription = "Saldo LUDES",
+                                tint = FreshGreenDark,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
                             Text(
                                 text = formatRupiah(walletBalanceRp),
                                 style = MaterialTheme.typography.labelMedium.copy(
-                                    fontSize = 11.sp,
-                                    lineHeight = 13.sp,
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.ExtraBold
                                 ),
                                 color = TextBlack,
                                 maxLines = 1
                             )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(19.dp)
+                                    .clip(CircleShape)
+                                    .background(FreshGreen),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Add,
+                                    contentDescription = "Isi saldo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                            }
                         }
                     }
-                }
 
-                Spacer(modifier = Modifier.width(2.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
 
-                IconButton(
-                    onClick = onBellClick,
-                    modifier = Modifier
-                        .minimumInteractiveComponentSize()
-                        .testTag("bell_button")
-                ) {
-                    Box {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .minimumInteractiveComponentSize()
+                            .clip(CircleShape)
+                            .background(if (isHomeTab) Color.White.copy(alpha = 0.16f) else BgLightGray)
+                            .border(
+                                width = 1.dp,
+                                color = if (isHomeTab) Color.White.copy(alpha = 0.22f) else SurfaceBorder,
+                                shape = CircleShape
+                            )
+                            .clickable { onBellClick() }
+                            .testTag("bell_button"),
+                        contentAlignment = Alignment.Center
+                    ) {
                         Icon(
-                            imageVector = Icons.Filled.Notifications,
+                            imageVector = Icons.Outlined.Notifications,
                             contentDescription = "Notifikasi",
-                            tint = TextBlack,
-                            modifier = Modifier.size(23.dp)
+                            tint = primaryTextColor,
+                            modifier = Modifier.size(21.dp)
                         )
                         if (unreadNotificationCount > 0) {
                             Box(
                                 modifier = Modifier
-                                    .size(9.dp)
+                                    .align(Alignment.TopEnd)
+                                    .offset(x = (-5).dp, y = 5.dp)
+                                    .size(10.dp)
                                     .clip(CircleShape)
                                     .background(ActionOrange)
-                                    .align(Alignment.TopEnd)
+                                    .border(1.5.dp, if (isHomeTab) FreshGreenDark else BgWhite, CircleShape)
                             )
                         }
                     }
                 }
+            }
+
+            if (!isHomeTab) {
+                HorizontalDivider(thickness = 1.dp, color = SurfaceBorder.copy(alpha = 0.85f))
             }
         }
     }
@@ -348,80 +374,125 @@ fun SisaEnakBottomBar(
         label = "pulseAlpha"
     )
 
-    val barContainer = BgWhite
-    val inactiveTint = TextGray
-    val indicatorTint = ActionOrangeSoft
-    val dotBorder = BgWhite
-
-    NavigationBar(
-        containerColor = barContainer,
-        tonalElevation = 0.dp,
-        windowInsets = WindowInsets.navigationBars
+    Surface(
+        color = BgWhite,
+        shadowElevation = 10.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        MainTab.entries.forEach { tab ->
-            val selected = currentRoute == tab.route
-            val selectedIcon = when (tab) {
-                MainTab.BERANDA -> Icons.Filled.Home
-                MainTab.PESANAN -> Icons.Filled.ReceiptLong
-                MainTab.LIVE -> Icons.Filled.LiveTv
-                MainTab.AKUN -> Icons.Filled.Person
-            }
-            val unselectedIcon = when (tab) {
-                MainTab.BERANDA -> Icons.Outlined.Home
-                MainTab.PESANAN -> Icons.Outlined.ReceiptLong
-                MainTab.LIVE -> Icons.Outlined.LiveTv
-                MainTab.AKUN -> Icons.Outlined.Person
-            }
-
-            NavigationBarItem(
-                selected = selected,
-                onClick = { onSelectTab(tab) },
-                modifier = Modifier.testTag("nav_${tab.route}"),
-                icon = {
-                    Box {
-                        Icon(
-                            imageVector = if (selected) selectedIcon else unselectedIcon,
-                            contentDescription = tab.label,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        if (tab == MainTab.LIVE && hasLiveNow) {
-                            Box(
-                                modifier = Modifier
-                                    .size(9.dp)
-                                    .clip(CircleShape)
-                                    .background(LiveRed.copy(alpha = pulseAlpha))
-                                    .border(1.5.dp, dotBorder, CircleShape)
-                                    .align(Alignment.TopEnd)
-                            )
-                        }
-                        if (tab == MainTab.PESANAN && activeOrderCount > 0) {
-                            Box(
-                                modifier = Modifier
-                                    .size(9.dp)
-                                    .clip(CircleShape)
-                                    .background(ActionOrange)
-                                    .border(1.5.dp, dotBorder, CircleShape)
-                                    .align(Alignment.TopEnd)
-                            )
-                        }
+        Column(modifier = Modifier.fillMaxWidth()) {
+            HorizontalDivider(thickness = 1.dp, color = SurfaceBorder.copy(alpha = 0.85f))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .height(64.dp)
+                    .padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MainTab.entries.forEach { tab ->
+                    val selected = currentRoute == tab.route
+                    val selectedIcon = when (tab) {
+                        MainTab.BERANDA -> Icons.Filled.Home
+                        MainTab.PESANAN -> Icons.Filled.ReceiptLong
+                        MainTab.LIVE -> Icons.Filled.LiveTv
+                        MainTab.AKUN -> Icons.Filled.Person
                     }
-                },
-                label = {
-                    Text(
-                        text = tab.label,
-                        style = MaterialTheme.typography.labelMedium.copy(
-                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                    val unselectedIcon = when (tab) {
+                        MainTab.BERANDA -> Icons.Outlined.Home
+                        MainTab.PESANAN -> Icons.Outlined.ReceiptLong
+                        MainTab.LIVE -> Icons.Outlined.LiveTv
+                        MainTab.AKUN -> Icons.Outlined.Person
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .clip(RoundedCornerShape(14.dp))
+                            .selectable(
+                                selected = selected,
+                                onClick = { onSelectTab(tab) },
+                                role = Role.Tab
+                            )
+                            .testTag("nav_${tab.route}"),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Top
+                    ) {
+                        // Top active indicator pill
+                        Box(
+                            modifier = Modifier
+                                .padding(top = 4.dp)
+                                .width(24.dp)
+                                .height(3.dp)
+                                .clip(RoundedCornerShape(50))
+                                .background(if (selected) ActionOrange else Color.Transparent)
                         )
-                    )
-                },
-                colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = ActionOrange,
-                    selectedTextColor = ActionOrange,
-                    indicatorColor = indicatorTint,
-                    unselectedIconColor = inactiveTint,
-                    unselectedTextColor = inactiveTint
-                )
-            )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(if (selected) ActionOrangeSoft else Color.Transparent)
+                                .padding(horizontal = 14.dp, vertical = 3.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = if (selected) selectedIcon else unselectedIcon,
+                                contentDescription = tab.label,
+                                tint = if (selected) ActionOrangeDark else TextGray,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            if (tab == MainTab.LIVE && hasLiveNow) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 4.dp, y = (-1).dp)
+                                        .size(9.dp)
+                                        .clip(CircleShape)
+                                        .background(LiveRed.copy(alpha = pulseAlpha))
+                                        .border(1.5.dp, BgWhite, CircleShape)
+                                )
+                            }
+                            if (tab == MainTab.PESANAN && activeOrderCount > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopEnd)
+                                        .offset(x = 8.dp, y = (-3).dp)
+                                        .height(16.dp)
+                                        .clip(RoundedCornerShape(50))
+                                        .background(ActionOrange)
+                                        .border(1.5.dp, BgWhite, RoundedCornerShape(50))
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = if (activeOrderCount > 9) "9+" else activeOrderCount.toString(),
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            fontSize = 9.sp,
+                                            lineHeight = 10.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        ),
+                                        color = Color.White
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        Text(
+                            text = tab.label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = if (selected) FontWeight.ExtraBold else FontWeight.Medium
+                            ),
+                            color = if (selected) ActionOrangeDark else TextGray,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
         }
     }
 }

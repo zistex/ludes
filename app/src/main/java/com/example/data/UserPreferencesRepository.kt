@@ -31,8 +31,20 @@ data class UserProfilePrefs(
     val notifWalletEnabled: Boolean = true,
     val appLanguage: String = "id",
     val isLoggedIn: Boolean = false,
-    val isEmailVerified: Boolean = false
-)
+    val isEmailVerified: Boolean = false,
+    val withdrawBankName: String = "",
+    val withdrawAccountNumber: String = "",
+    val withdrawAccountHolder: String = ""
+) {
+    val hasSavedWithdrawAccount: Boolean
+        get() = withdrawBankName.isNotBlank() && withdrawAccountNumber.isNotBlank()
+
+    fun formattedWithdrawAccount(): String {
+        if (!hasSavedWithdrawAccount) return ""
+        val holderSuffix = if (withdrawAccountHolder.isNotBlank()) " ($withdrawAccountHolder)" else ""
+        return "$withdrawBankName • $withdrawAccountNumber$holderSuffix"
+    }
+}
 
 class UserPreferencesRepository(private val context: Context) {
 
@@ -54,6 +66,9 @@ class UserPreferencesRepository(private val context: Context) {
         val NOTIF_LIVE_ENABLED = booleanPreferencesKey("notif_live_enabled")
         val NOTIF_WALLET_ENABLED = booleanPreferencesKey("notif_wallet_enabled")
         val APP_LANGUAGE = stringPreferencesKey("app_language")
+        val WITHDRAW_BANK_NAME = stringPreferencesKey("withdraw_bank_name")
+        val WITHDRAW_ACCOUNT_NUMBER = stringPreferencesKey("withdraw_account_number")
+        val WITHDRAW_ACCOUNT_HOLDER = stringPreferencesKey("withdraw_account_holder")
     }
 
     val userPrefs: Flow<UserProfilePrefs> = context.dataStore.data.map { prefs ->
@@ -73,7 +88,10 @@ class UserPreferencesRepository(private val context: Context) {
             notifWalletEnabled = prefs[Keys.NOTIF_WALLET_ENABLED] ?: true,
             appLanguage = prefs[Keys.APP_LANGUAGE] ?: "id",
             isLoggedIn = prefs[Keys.IS_LOGGED_IN] ?: false,
-            isEmailVerified = prefs[Keys.IS_EMAIL_VERIFIED] ?: false
+            isEmailVerified = prefs[Keys.IS_EMAIL_VERIFIED] ?: false,
+            withdrawBankName = prefs[Keys.WITHDRAW_BANK_NAME] ?: "",
+            withdrawAccountNumber = prefs[Keys.WITHDRAW_ACCOUNT_NUMBER] ?: "",
+            withdrawAccountHolder = prefs[Keys.WITHDRAW_ACCOUNT_HOLDER] ?: ""
         )
     }
 
@@ -158,6 +176,26 @@ class UserPreferencesRepository(private val context: Context) {
 
     suspend fun updateAppLanguage(languageCode: String) {
         context.dataStore.edit { it[Keys.APP_LANGUAGE] = languageCode }
+    }
+
+    suspend fun updateWithdrawAccount(
+        bankName: String,
+        accountNumber: String,
+        accountHolder: String
+    ) {
+        context.dataStore.edit {
+            it[Keys.WITHDRAW_BANK_NAME] = bankName.trim()
+            it[Keys.WITHDRAW_ACCOUNT_NUMBER] = accountNumber.trim()
+            it[Keys.WITHDRAW_ACCOUNT_HOLDER] = accountHolder.trim()
+        }
+    }
+
+    suspend fun clearWithdrawAccount() {
+        context.dataStore.edit {
+            it.remove(Keys.WITHDRAW_BANK_NAME)
+            it.remove(Keys.WITHDRAW_ACCOUNT_NUMBER)
+            it.remove(Keys.WITHDRAW_ACCOUNT_HOLDER)
+        }
     }
 
     suspend fun adjustWallet(deltaRp: Int) {

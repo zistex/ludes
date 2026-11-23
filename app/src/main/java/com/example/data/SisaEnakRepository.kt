@@ -94,6 +94,18 @@ class SisaEnakRepository(
         prefsRepo.updateAppLanguage(languageCode)
     }
 
+    suspend fun updateWithdrawAccount(
+        bankName: String,
+        accountNumber: String,
+        accountHolder: String
+    ) {
+        prefsRepo.updateWithdrawAccount(bankName, accountNumber, accountHolder)
+    }
+
+    suspend fun clearWithdrawAccount() {
+        prefsRepo.clearWithdrawAccount()
+    }
+
     suspend fun topUpSaldo(amount: Int) {
         prefsRepo.adjustWallet(amount)
     }

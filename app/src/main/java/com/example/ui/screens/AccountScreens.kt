@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
@@ -32,7 +33,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ConfirmationNumber
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Language
@@ -58,11 +61,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +85,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -738,6 +746,7 @@ fun ViewHistoryScreen(
 fun SettingsScreen(
     uiState: SisaEnakUiState,
     onBack: () -> Unit,
+    onOpenWithdrawAccountSettings: () -> Unit,
     onOpenNotificationSettings: () -> Unit,
     onOpenLanguageSettings: () -> Unit,
     onOpenPrivacyPolicy: () -> Unit,
@@ -760,6 +769,8 @@ fun SettingsScreen(
     } else {
         "$activeNotifCount saluran aktif • Pengingat harian nonaktif"
     }
+    val savedAccountSummary = prefs.formattedWithdrawAccount()
+        .ifBlank { "Belum ada rekening tersimpan • Tap untuk atur" }
 
     Scaffold(
         containerColor = BgLightGray,
@@ -782,6 +793,30 @@ fun SettingsScreen(
                 modifier = Modifier.widthIn(max = 600.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
+                // Section: Keuangan & Rekening
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Keuangan & Rekening",
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                        color = TextBlack,
+                        modifier = Modifier.padding(horizontal = 4.dp)
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = BgWhite,
+                        border = BorderStroke(1.dp, SurfaceBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        SettingsItemRow(
+                            icon = Icons.Filled.AccountBalance,
+                            title = "Rekening Penarikan",
+                            value = savedAccountSummary,
+                            onClick = onOpenWithdrawAccountSettings,
+                            testTag = "settings_withdraw_account_row"
+                        )
+                    }
+                }
+
                 // Section: Preferensi Aplikasi
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
@@ -957,22 +992,46 @@ fun WalletScreen(
     onBack: () -> Unit,
     onTopUp: (Int) -> Unit,
     onRequestWithdraw: (Int, String) -> Unit,
-    onSimulateWithdrawComplete: (String) -> Unit
+    onSimulateWithdrawComplete: (String) -> Unit,
+    onOpenWithdrawAccountSettings: () -> Unit = {}
 ) {
     val balance = uiState.userPrefs.walletBalanceRp
-    var selectedPreset by remember { mutableIntStateOf(25000) } // -1 = Semua Saldo
-    val effectiveAmount = if (selectedPreset == -1) balance else selectedPreset
-    val canWithdraw = effectiveAmount >= 10000 && balance >= effectiveAmount
+    val defaultInput = remember(balance) {
+        if (balance >= 25000) "25000" else if (balance >= 10000) "10000" else ""
+    }
+    var amountInput by remember { mutableStateOf(defaultInput) }
+    val effectiveAmount = amountInput.toIntOrNull() ?: 0
+    val isMinValid = effectiveAmount >= 10000
+    val isBalanceEnough = balance >= effectiveAmount
+    val canWithdraw = isMinValid && isBalanceEnough
 
-    val destinations = remember {
+    val savedAccountLabel = uiState.userPrefs.formattedWithdrawAccount()
+    val defaultDestinations = remember(uiState.userPrefs.userName) {
+        val owner = uiState.userPrefs.userName.ifBlank { "Siti Rahma" }
         listOf(
-            "BCA •••• 4821 (Siti Rahma)",
-            "BRI •••• 1109 (Siti Rahma)",
+            "BCA •••• 4821 ($owner)",
+            "BRI •••• 1109 ($owner)",
             "GoPay • 0812••••7890",
             "OVO • 0812••••7890"
         )
     }
-    var selectedDestination by remember { mutableStateOf(destinations.first()) }
+    val destinations = remember(savedAccountLabel, defaultDestinations) {
+        if (savedAccountLabel.isNotBlank()) {
+            listOf(savedAccountLabel) + defaultDestinations.filterNot { it == savedAccountLabel }
+        } else {
+            defaultDestinations
+        }
+    }
+    var selectedDestination by remember {
+        mutableStateOf(savedAccountLabel.ifBlank { defaultDestinations.first() })
+    }
+    LaunchedEffect(savedAccountLabel) {
+        if (savedAccountLabel.isNotBlank()) {
+            selectedDestination = savedAccountLabel
+        } else if (selectedDestination !in destinations) {
+            selectedDestination = destinations.first()
+        }
+    }
 
     Scaffold(
         containerColor = BgLightGray,
@@ -1025,7 +1084,7 @@ fun WalletScreen(
                     }
                 }
 
-                // Card Tarik Saldo (Withdraw Request - Tanpa Ketik)
+                // Card Tarik Saldo (Custom Nominal Input + Rekening Tersimpan)
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = BgWhite,
@@ -1059,7 +1118,7 @@ fun WalletScreen(
                                     color = TextBlack
                                 )
                                 Text(
-                                    text = "Pilih nominal & tujuan pencairan tanpa ketik",
+                                    text = "Ketik nominal penarikan atau pilih cepat di bawah",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextGray
                                 )
@@ -1067,10 +1126,81 @@ fun WalletScreen(
                         }
 
                         Text(
-                            text = "Pilih Nominal Penarikan",
+                            text = "Nominal Penarikan",
                             style = MaterialTheme.typography.labelLarge,
                             color = TextBlack
                         )
+
+                        OutlinedTextField(
+                            value = amountInput,
+                            onValueChange = { raw ->
+                                val digits = raw.filter { it.isDigit() }.take(9)
+                                amountInput = digits.trimStart('0').ifEmpty {
+                                    if (digits.isNotEmpty()) "0" else ""
+                                }
+                            },
+                            label = { Text("Masukkan Nominal Penarikan") },
+                            placeholder = { Text("Contoh: 25000") },
+                            prefix = {
+                                Text(
+                                    text = "Rp ",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = TextBlack
+                                )
+                            },
+                            trailingIcon = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (amountInput.isNotEmpty()) {
+                                        IconButton(onClick = { amountInput = "" }) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Hapus nominal",
+                                                tint = TextGray
+                                            )
+                                        }
+                                    }
+                                    if (balance >= 10000 && effectiveAmount != balance) {
+                                        TextButton(
+                                            onClick = { amountInput = balance.toString() }
+                                        ) {
+                                            Text(
+                                                text = "Maks",
+                                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                                color = FreshGreenDark
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            singleLine = true,
+                            isError = amountInput.isNotEmpty() && !canWithdraw,
+                            supportingText = {
+                                val helperText = when {
+                                    amountInput.isEmpty() -> "Minimal penarikan Rp10.000 • Saldo tersedia ${formatRupiah(balance)}"
+                                    !isMinValid -> "Minimal penarikan Rp10.000"
+                                    !isBalanceEnough -> "Melebihi saldo tersedia (${formatRupiah(balance)})"
+                                    else -> "Akan ditarik: ${formatRupiah(effectiveAmount)}"
+                                }
+                                Text(
+                                    text = helperText,
+                                    color = if (amountInput.isNotEmpty() && !canWithdraw) LiveRed else TextGray
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Number,
+                                imeAction = ImeAction.Done
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = FreshGreen,
+                                unfocusedBorderColor = SurfaceBorder,
+                                focusedLabelColor = FreshGreenDark
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("wallet_withdraw_amount_input")
+                        )
+
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1081,7 +1211,8 @@ fun WalletScreen(
                                 50000 to "Rp50rb",
                                 -1 to "Semua"
                             ).forEach { (nominalValue, label) ->
-                                val isSelected = selectedPreset == nominalValue
+                                val targetAmount = if (nominalValue == -1) balance else nominalValue
+                                val isSelected = effectiveAmount > 0 && effectiveAmount == targetAmount
                                 Surface(
                                     shape = RoundedCornerShape(12.dp),
                                     color = if (isSelected) ActionOrangeSoft else BgLightGray,
@@ -1093,7 +1224,9 @@ fun WalletScreen(
                                         .weight(1f)
                                         .heightIn(min = 46.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .clickable { selectedPreset = nominalValue }
+                                        .clickable {
+                                            amountInput = if (targetAmount > 0) targetAmount.toString() else ""
+                                        }
                                         .testTag("withdraw_nominal_$nominalValue")
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
@@ -1107,14 +1240,80 @@ fun WalletScreen(
                             }
                         }
 
-                        Text(
-                            text = "Tujuan Pencairan",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = TextBlack
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Tujuan Pencairan",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = TextBlack
+                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable { onOpenWithdrawAccountSettings() }
+                                    .padding(horizontal = 6.dp, vertical = 4.dp)
+                                    .testTag("wallet_manage_account_button")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Edit,
+                                    contentDescription = null,
+                                    tint = FreshGreenDark,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (savedAccountLabel.isNotBlank()) "Ubah Rekening" else "Simpan Rekening",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = FreshGreenDark
+                                )
+                            }
+                        }
+
+                        if (savedAccountLabel.isBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = FreshGreenSoft,
+                                border = BorderStroke(1.dp, FreshGreenBorder),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { onOpenWithdrawAccountSettings() }
+                                    .testTag("wallet_setup_saved_account_banner")
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "Belum ada rekening tersimpan di Pengaturan",
+                                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                                            color = FreshGreenDark
+                                        )
+                                        Text(
+                                            text = "Simpan nomor rekening pribadimu agar pencairan lebih cepat.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = TextGray
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                        contentDescription = "Buka pengaturan rekening",
+                                        tint = FreshGreenDark
+                                    )
+                                }
+                            }
+                        }
+
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             destinations.forEach { dest ->
                                 val isSelected = selectedDestination == dest
+                                val isSavedPrimary = savedAccountLabel.isNotBlank() && dest == savedAccountLabel
                                 Surface(
                                     shape = RoundedCornerShape(14.dp),
                                     color = if (isSelected) FreshGreenSoft else BgLightGray,
@@ -1133,14 +1332,37 @@ fun WalletScreen(
                                         verticalAlignment = Alignment.CenterVertically,
                                         horizontalArrangement = Arrangement.SpaceBetween
                                     ) {
-                                        Text(
-                                            text = dest,
-                                            style = MaterialTheme.typography.bodyMedium.copy(
-                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-                                            ),
-                                            color = TextBlack
-                                        )
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text(
+                                                text = dest,
+                                                style = MaterialTheme.typography.bodyMedium.copy(
+                                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                                ),
+                                                color = TextBlack,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                                modifier = Modifier.weight(1f, fill = false)
+                                            )
+                                            if (isSavedPrimary) {
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(50),
+                                                    color = FreshGreenDark
+                                                ) {
+                                                    Text(
+                                                        text = "Tersimpan",
+                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                        color = Color.White,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
                                         if (isSelected) {
+                                            Spacer(modifier = Modifier.width(8.dp))
                                             Icon(
                                                 imageVector = Icons.Filled.CheckCircle,
                                                 contentDescription = "Dipilih",
@@ -1192,10 +1414,10 @@ fun WalletScreen(
 
                         if (!canWithdraw) {
                             Text(
-                                text = if (balance < 10000) {
-                                    "Minimal penarikan Rp10.000. Saldo kamu saat ini ${formatRupiah(balance)}."
-                                } else {
-                                    "Saldo kamu belum cukup untuk penarikan ${formatRupiah(effectiveAmount)}."
+                                text = when {
+                                    balance < 10000 -> "Minimal penarikan Rp10.000. Saldo kamu saat ini ${formatRupiah(balance)}."
+                                    effectiveAmount < 10000 -> "Masukkan nominal minimal Rp10.000 untuk mengajukan penarikan."
+                                    else -> "Saldo kamu belum cukup untuk penarikan ${formatRupiah(effectiveAmount)}."
                                 },
                                 style = MaterialTheme.typography.bodySmall,
                                 color = LiveRed
@@ -1203,7 +1425,11 @@ fun WalletScreen(
                         }
 
                         PrimaryOrangeButton(
-                            text = "Ajukan Tarik Saldo • ${formatRupiah(effectiveAmount)}",
+                            text = if (effectiveAmount > 0) {
+                                "Ajukan Tarik Saldo • ${formatRupiah(effectiveAmount)}"
+                            } else {
+                                "Ajukan Tarik Saldo"
+                            },
                             onClick = { onRequestWithdraw(effectiveAmount, selectedDestination) },
                             enabled = canWithdraw,
                             testTag = "wallet_withdraw_submit_button",

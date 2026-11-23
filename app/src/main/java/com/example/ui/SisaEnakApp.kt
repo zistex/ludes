@@ -1,5 +1,6 @@
 package com.example.ui
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.BorderStroke
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -25,6 +27,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScaffoldDefaults
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -32,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,7 +43,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -80,6 +86,7 @@ import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.ViewHistoryScreen
 import com.example.ui.screens.VouchersScreen
 import com.example.ui.screens.WalletScreen
+import com.example.ui.screens.WithdrawAccountSettingsScreen
 import com.example.ui.theme.ActionOrange
 import com.example.ui.theme.BgLightGray
 import com.example.ui.theme.FreshGreen
@@ -111,6 +118,7 @@ private object Routes {
     const val FAVORITES = "favorites"
     const val VIEW_HISTORY = "view_history"
     const val SETTINGS = "settings"
+    const val SETTINGS_WITHDRAW_ACCOUNT = "settings_withdraw_account"
     const val SETTINGS_NOTIFICATIONS = "settings_notifications"
     const val SETTINGS_LANGUAGE = "settings_language"
     const val SETTINGS_PRIVACY = "settings_privacy"
@@ -155,7 +163,19 @@ fun SisaEnakApp(
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route ?: Routes.BERANDA
     val isMainTab = currentRoute in listOf(Routes.BERANDA, Routes.PESANAN, Routes.LIVE, Routes.AKUN)
+    val showTopHeader = currentRoute == Routes.BERANDA
     val activeOrderCount = uiState.orders.count { it.status == OrderStatus.BELUM_DIAMBIL.name }
+    val view = LocalView.current
+
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (context as? Activity)?.window
+            if (window != null) {
+                WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars =
+                    currentRoute != Routes.BERANDA && currentRoute != Routes.LIVE
+            }
+        }
+    }
 
     fun switchTab(tab: MainTab) {
         navController.navigate(tab.route) {
@@ -168,16 +188,22 @@ fun SisaEnakApp(
     }
 
     Scaffold(
+        contentWindowInsets = if (currentRoute == Routes.LIVE) {
+            WindowInsets(0, 0, 0, 0)
+        } else {
+            ScaffoldDefaults.contentWindowInsets
+        },
         snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
-            if (isMainTab) {
+            if (showTopHeader) {
                 SisaEnakTopHeader(
                     location = uiState.userPrefs.location,
                     onLocationClick = { navController.navigate(Routes.LOCATION_PICKER) },
                     onBellClick = { navController.navigate(Routes.NOTIFICATIONS) },
                     unreadNotificationCount = uiState.unreadNotificationCount,
                     walletBalanceRp = uiState.userPrefs.walletBalanceRp,
-                    onWalletClick = { navController.navigate(Routes.WALLET) }
+                    onWalletClick = { navController.navigate(Routes.WALLET) },
+                    isHomeTab = currentRoute == Routes.BERANDA
                 )
             }
         },
@@ -560,6 +586,9 @@ fun SisaEnakApp(
                     SettingsScreen(
                         uiState = uiState,
                         onBack = { navController.popBackStack() },
+                        onOpenWithdrawAccountSettings = {
+                            navController.navigate(Routes.SETTINGS_WITHDRAW_ACCOUNT)
+                        },
                         onOpenNotificationSettings = {
                             navController.navigate(Routes.SETTINGS_NOTIFICATIONS)
                         },
@@ -578,6 +607,19 @@ fun SisaEnakApp(
                             }
                         },
                         onShowMessage = { viewModel.showMessage(it) }
+                    )
+                }
+
+                composable(Routes.SETTINGS_WITHDRAW_ACCOUNT) {
+                    WithdrawAccountSettingsScreen(
+                        uiState = uiState,
+                        onBack = { navController.popBackStack() },
+                        onSaveAccount = { bank, number, holder ->
+                            viewModel.updateWithdrawAccount(bank, number, holder)
+                        },
+                        onClearAccount = {
+                            viewModel.clearWithdrawAccount()
+                        }
                     )
                 }
 
@@ -624,6 +666,9 @@ fun SisaEnakApp(
                         },
                         onSimulateWithdrawComplete = { id ->
                             viewModel.markWithdrawCompleted(id)
+                        },
+                        onOpenWithdrawAccountSettings = {
+                            navController.navigate(Routes.SETTINGS_WITHDRAW_ACCOUNT)
                         }
                     )
                 }

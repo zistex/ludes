@@ -35,6 +35,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -467,6 +468,7 @@ private fun TikTokLiveStreamPage(
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
                 .widthIn(max = 600.dp)
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
             Row(
@@ -1926,6 +1928,7 @@ private fun LiveExploreGridOverlay(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .windowInsetsPadding(WindowInsets.statusBars)
                 .padding(16.dp)
         ) {
             Row(
