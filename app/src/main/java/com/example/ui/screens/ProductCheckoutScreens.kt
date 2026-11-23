@@ -33,11 +33,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.Payments
@@ -48,6 +50,7 @@ import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.ZoomIn
 import androidx.compose.material3.Button
@@ -55,6 +58,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -76,16 +80,20 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.data.OrderEntity
+import com.example.data.PatunganGroupEntity
+import com.example.data.PatunganStatus
 import com.example.data.PaymentMethod
 import com.example.data.ProductEntity
 import com.example.data.ProductReviewEntity
 import com.example.data.formatCompactCount
 import com.example.data.formatRupiah
+import com.example.data.resolvePatunganAreaForProduct
 import com.example.data.resolveProductGalleryKeys
 import kotlinx.coroutines.launch
 import com.example.ui.components.FoodProductImage
@@ -115,9 +123,12 @@ import com.example.ui.theme.TextGray
 fun ProductDetailScreen(
     product: ProductEntity,
     reviews: List<ProductReviewEntity>,
+    patunganGroup: PatunganGroupEntity? = null,
     onBack: () -> Unit,
     onToggleFavorite: () -> Unit,
-    onBuyNow: () -> Unit
+    onBuyNow: () -> Unit,
+    onOpenPatungan: () -> Unit = {},
+    onOpenSoloFullDelivery: () -> Unit = {}
 ) {
     val discountPct = ((product.originalPrice - product.discountPrice) * 100) /
         product.originalPrice.coerceAtLeast(1)
@@ -505,7 +516,229 @@ fun ProductDetailScreen(
                         }
                     }
 
-                    // Alamat Toko Card (Hanya Ambil Sendiri)
+                    // Pilihan Cara Ambil / Antar (Ambil Sendiri Gratis, Patungan Gojek Rp3rb, atau Bayar Full)
+                    val areaName = patunganGroup?.areaName ?: resolvePatunganAreaForProduct(product).areaName
+                    val filled = patunganGroup?.filledSlots ?: 3
+                    val maxSlots = patunganGroup?.maxSlots ?: 5
+                    val remaining = (maxSlots - filled).coerceAtLeast(0)
+                    val departHour = patunganGroup?.departHour ?: "19.30"
+                    val userJoined = patunganGroup?.userJoined == true
+                    val isFull = remaining <= 0 || (patunganGroup != null && patunganGroup.status != PatunganStatus.OPEN.name && !userJoined)
+                    val patunganEnabled = (product.stock > 0 || userJoined) && (!isFull || userJoined)
+                    val progress = (filled.toFloat() / maxSlots.toFloat()).coerceIn(0f, 1f)
+
+                    Surface(
+                        shape = RoundedCornerShape(18.dp),
+                        color = BgWhite,
+                        border = BorderStroke(1.2.dp, ActionOrangeBorder),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("product_detail_patungan_card")
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Group,
+                                        contentDescription = null,
+                                        tint = ActionOrangeDark,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "Pilih Cara Ambil atau Antar",
+                                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                        color = TextBlack
+                                    )
+                                }
+                                Surface(shape = RoundedCornerShape(50), color = ActionOrangeSoft) {
+                                    Text(
+                                        text = "Area $areaName",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = ActionOrangeDark,
+                                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+
+                            // Highlight Patungan Status
+                            Surface(
+                                shape = RoundedCornerShape(14.dp),
+                                color = if (isFull && !userJoined) BgLightGray else ActionOrangeSoft,
+                                border = BorderStroke(1.dp, if (isFull && !userJoined) SurfaceBorder else ActionOrangeBorder),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Text(
+                                        text = when {
+                                            userJoined && patunganGroup?.status == PatunganStatus.BERANGKAT.name ->
+                                                "Patungan 5/5 Siap! Driver sedang mengantar ke $areaName"
+                                            userJoined ->
+                                                "Kamu sudah ikut ($filled/$maxSlots)! Tinggal $remaining orang lagi, ayo siap angkut!"
+                                            isFull ->
+                                                "Patungan Gojek $filled/$maxSlots sudah penuh untuk jam $departHour"
+                                            else ->
+                                                "Tinggal $remaining lagi dari $maxSlots orang, ayo siap angkut! Ongkir cuma Rp3.000"
+                                        },
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                        color = if (isFull && !userJoined) TextGray else ActionOrangeDark
+                                    )
+                                    LinearProgressIndicator(
+                                        progress = { progress },
+                                        color = FreshGreen,
+                                        trackColor = Color.White,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(50))
+                                    )
+                                    Text(
+                                        text = "$filled/$maxSlots orang sudah ikut • Berangkat jam $departHour • Radius max 1km",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextGray
+                                    )
+                                }
+                            }
+
+                            // Opsi 1: AMBIL SENDIRI - GRATIS (Hijau)
+                            Button(
+                                onClick = onBuyNow,
+                                enabled = product.stock > 0,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = FreshGreen,
+                                    contentColor = Color.White,
+                                    disabledContainerColor = SurfaceBorder,
+                                    disabledContentColor = TextGray
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .testTag("detail_option_ambil_sendiri")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                                    contentDescription = "Ambil Sendiri",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "AMBIL SENDIRI • GRATIS ONGKIR",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Ambil di ${product.storeName} (${product.distanceText}) • Total ${formatRupiah(product.discountPrice)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.92f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Opsi 2: PATUNGAN GOJEK - Rp3.000 (Oranye, atau Abu-abu saat penuh)
+                            Button(
+                                onClick = onOpenPatungan,
+                                enabled = patunganEnabled,
+                                shape = RoundedCornerShape(14.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isFull && !userJoined) Color(0xFFD1D5DB) else ActionOrange,
+                                    contentColor = if (isFull && !userJoined) TextGray else Color.White,
+                                    disabledContainerColor = Color(0xFFE5E7EB),
+                                    disabledContentColor = TextGray
+                                ),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .testTag("detail_option_patungan_gojek")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.TwoWheeler,
+                                    contentDescription = "Patungan Gojek",
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when {
+                                            userJoined -> "LIHAT STATUS PATUNGAN ($filled/$maxSlots)"
+                                            isFull -> "PATUNGAN PENUH (0/$maxSlots SLOT)"
+                                            else -> "PATUNGAN GOJEK • ONGKIR Rp3.000"
+                                        },
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = when {
+                                            userJoined -> "Pantau progres teman patungan & driver di sini"
+                                            isFull -> "Slot patungan area $areaName sudah penuh"
+                                            else -> "Tinggal $remaining lagi! Hemat ongkir Rp12rb • Total ${formatRupiah(product.discountPrice + 3000)}"
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isFull && !userJoined) TextGray else Color.White.copy(alpha = 0.92f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+
+                            // Opsi 3: BAYAR FULL ONGKIR (Antar Langsung Sendiri Rp15.000)
+                            OutlinedButton(
+                                onClick = onOpenSoloFullDelivery,
+                                enabled = product.stock > 0,
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.5.dp, ActionOrange),
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = ActionOrangeDark),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 56.dp)
+                                    .testTag("detail_option_bayar_full")
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.TwoWheeler,
+                                    contentDescription = "Antar Langsung Bayar Full",
+                                    tint = ActionOrangeDark,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "BAYAR FULL • ANTAR LANGSUNG",
+                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                                        color = ActionOrangeDark,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "Ongkir Gojek normal Rp15.000 tanpa tunggu patungan • Total ${formatRupiah(product.discountPrice + 15000)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TextGray,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Alamat Toko Card
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = BgWhite,
@@ -514,7 +747,7 @@ fun ProductDetailScreen(
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(
-                                text = "Lokasi Pengambilan (Ambil Sendiri)",
+                                text = "Lokasi Toko (${product.storeName})",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = TextBlack
                             )
@@ -536,7 +769,10 @@ fun ProductDetailScreen(
                                 )
                             }
                             Spacer(modifier = Modifier.height(10.dp))
-                            PickupOnlyBanner()
+                            PickupOnlyBanner(
+                                title = "Ambil Sendiri Gratis atau Patungan Gojek",
+                                subtitle = "Semua transaksi non-tunai di LUDES (tidak ada COD)"
+                            )
                         }
                     }
 

@@ -1548,3 +1548,4 @@ fun RigidGridProductCard(
         }
     }
 }
+

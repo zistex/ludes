@@ -107,6 +107,48 @@ data class ProductReviewEntity(
     val createdAtMillis: Long
 )
 
+@Entity(tableName = "patungan_groups")
+data class PatunganGroupEntity(
+    @PrimaryKey val id: String,
+    val productId: String,
+    val productTitle: String,
+    val storeName: String,
+    val storeAddress: String,
+    val imageKey: String,
+    val bagPriceRp: Int,
+    val normalShippingRp: Int = 15000,
+    val patunganShippingRp: Int = 3000,
+    val areaName: String, // PatunganArea.areaName: Dago, Dipatiukur, Cihampelas, Buah Batu, Cibiru
+    val pickupSlot: String, // e.g. "19.00 - 19.30"
+    val cutoffHour: String, // e.g. "19.00"
+    val departHour: String, // e.g. "19.30"
+    val maxSlots: Int = 5,
+    val minSlotsToDepart: Int = 3,
+    val membersJson: String,
+    val status: String, // PatunganStatus.name
+    val userJoined: Boolean = false,
+    val userPaymentMethod: String = "",
+    val userTotalPaidRp: Int = 0,
+    val fundsHeldInEscrow: Boolean = false,
+    val driverName: String = "Pak Agus",
+    val driverPlate: String = "Motor B 1234 XYZ",
+    val driverRating: Double = 4.9,
+    val driverStage: String = DriverStage.MENUJU_TOKO.name,
+    val hasPickedUpAtStore: Boolean = false,
+    val etaMinutes: Int = 10,
+    val isSoloFallbackDelivery: Boolean = false,
+    val createdAtMillis: Long = System.currentTimeMillis()
+) {
+    val members: List<PatunganMember>
+        get() = deserializePatunganMembers(membersJson)
+
+    val filledSlots: Int
+        get() = members.size.coerceAtMost(maxSlots)
+
+    val remainingSlots: Int
+        get() = (maxSlots - filledSlots).coerceAtLeast(0)
+}
+
 @Dao
 interface ProductDao {
     @Query("SELECT * FROM products ORDER BY isMerchantPublished DESC, isLive DESC, stock DESC")
@@ -212,6 +254,24 @@ interface ProductReviewDao {
     suspend fun upsert(item: ProductReviewEntity)
 }
 
+@Dao
+interface PatunganDao {
+    @Query("SELECT * FROM patungan_groups ORDER BY userJoined DESC, createdAtMillis DESC")
+    fun observeAllPatungan(): Flow<List<PatunganGroupEntity>>
+
+    @Query("SELECT * FROM patungan_groups WHERE id = :id LIMIT 1")
+    suspend fun getById(id: String): PatunganGroupEntity?
+
+    @Query("SELECT * FROM patungan_groups WHERE productId = :productId LIMIT 1")
+    suspend fun getByProductId(productId: String): PatunganGroupEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertAll(items: List<PatunganGroupEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(item: PatunganGroupEntity)
+}
+
 @Database(
     entities = [
         ProductEntity::class,
@@ -219,9 +279,10 @@ interface ProductReviewDao {
         OrderEntity::class,
         ViewedHistoryEntity::class,
         WithdrawRequestEntity::class,
-        ProductReviewEntity::class
+        ProductReviewEntity::class,
+        PatunganGroupEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class SisaEnakDatabase : RoomDatabase() {
@@ -231,6 +292,7 @@ abstract class SisaEnakDatabase : RoomDatabase() {
     abstract fun viewedHistoryDao(): ViewedHistoryDao
     abstract fun withdrawDao(): WithdrawDao
     abstract fun productReviewDao(): ProductReviewDao
+    abstract fun patunganDao(): PatunganDao
 
     companion object {
         @Volatile
@@ -261,6 +323,8 @@ abstract class SisaEnakDatabase : RoomDatabase() {
         suspend fun ensureSeeded(db: SisaEnakDatabase) {
             if (db.productDao().getProductById("prod_bakery_dago") == null) {
                 seedInitialData(db)
+            } else if (db.patunganDao().getById("patungan_prod_bakery_dago") == null) {
+                seedPatunganData(db, System.currentTimeMillis())
             }
         }
 
@@ -716,6 +780,200 @@ abstract class SisaEnakDatabase : RoomDatabase() {
                 )
             )
             db.productReviewDao().insertAll(reviews)
+            seedPatunganData(db, now)
+        }
+
+        private suspend fun seedPatunganData(db: SisaEnakDatabase, now: Long) {
+            val groups = listOf(
+                // 1. Bakery Dago: 3/5 already joined -> Kamu joins as #4, leaving #5 Slot Kosong -> Waiting 4/5!
+                PatunganGroupEntity(
+                    id = "patungan_prod_bakery_dago",
+                    productId = "prod_bakery_dago",
+                    productTitle = "Kantong Kejutan Roti",
+                    storeName = "Bakery Dago",
+                    storeAddress = "Jl. Dago No. 88",
+                    imageKey = "bakery",
+                    bagPriceRp = 10000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Siti", "Dago Atas", "Dago Atas No. 12", 0.35, paidAmountRp = 13000),
+                            PatunganMember(2, "Budi", "Dago Bawah", "Dago Bawah No. 5", 0.55, paidAmountRp = 13000),
+                            PatunganMember(3, "Andi", "Dago Atas", "Dago Atas No. 8", 0.72, paidAmountRp = 13000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 300_000L
+                ),
+                // 2. Warung Bu Sari: 4/5 orang sudah ikut - Sisa 1 Slot - Berangkat Jam 19.30
+                PatunganGroupEntity(
+                    id = "patungan_prod_warung_bu_sari",
+                    productId = "prod_warung_bu_sari",
+                    productTitle = "Kantong Hemat Warung Bu Sari",
+                    storeName = "Warung Bu Sari",
+                    storeAddress = "Jl. Dago No. 88",
+                    imageKey = "nasi",
+                    bagPriceRp = 10000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Siti", "Dago Atas", "Dago Atas No. 12", 0.30, paidAmountRp = 13000),
+                            PatunganMember(2, "Budi", "Dago Bawah", "Dago Bawah No. 5", 0.50, paidAmountRp = 13000),
+                            PatunganMember(3, "Andi", "Dago Atas", "Dago Atas No. 8", 0.68, paidAmountRp = 13000),
+                            PatunganMember(4, "Rina", "Dago Pojok", "Dago Pojok No. 3", 0.85, paidAmountRp = 13000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 420_000L
+                ),
+                // 3. Warteg Bahari Dago: 2/5 orang
+                PatunganGroupEntity(
+                    id = "patungan_prod_warteg_bahari",
+                    productId = "prod_warteg_bahari",
+                    productTitle = "Paket Nasi Rendang & Telur Balado",
+                    storeName = "Warteg Bahari Dago",
+                    storeAddress = "Jl. Ir. H. Juanda No. 112",
+                    imageKey = "nasi",
+                    bagPriceRp = 12000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Fajar", "Dago Atas", "Dago Atas No. 21", 0.40, paidAmountRp = 15000),
+                            PatunganMember(2, "Dewi", "Dago Bawah", "Dago Bawah No. 14", 0.65, paidAmountRp = 15000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 540_000L
+                ),
+                // 4. Martabak Simpang: Area Dipatiukur 3/5
+                PatunganGroupEntity(
+                    id = "patungan_prod_martabak_simpang",
+                    productId = "prod_martabak_simpang",
+                    productTitle = "Kantong Martabak & Kue Basah",
+                    storeName = "Martabak Simpang Dago",
+                    storeAddress = "Jl. Dipatiukur No. 45",
+                    imageKey = "jajanan",
+                    bagPriceRp = 15000,
+                    areaName = PatunganArea.DIPATIUKUR.areaName,
+                    pickupSlot = "20.00 - 20.30",
+                    cutoffHour = "19.45",
+                    departHour = "20.00",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Tio", "Dipatiukur Utara", "Dipatiukur No. 18", 0.30, paidAmountRp = 18000),
+                            PatunganMember(2, "Nisa", "Sekitar ITB", "Ganesha No. 9", 0.48, paidAmountRp = 18000),
+                            PatunganMember(3, "Hendra", "Dipatiukur Selatan", "Dipatiukur No. 66", 0.76, paidAmountRp = 18000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 600_000L
+                ),
+                // 5. Kedai Buah Segar Dago: 4/5 -> Sisa 1 Slot
+                PatunganGroupEntity(
+                    id = "patungan_prod_buah_segar",
+                    productId = "prod_buah_segar",
+                    productTitle = "Kotak Buah Potong Tropis Segar",
+                    storeName = "Kedai Buah Segar Dago",
+                    storeAddress = "Jl. Tubagus Ismail No. 19",
+                    imageKey = "buah",
+                    bagPriceRp = 10000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Maya", "Dago Atas", "Tubagus Ismail No. 7", 0.25, paidAmountRp = 13000),
+                            PatunganMember(2, "Rudi", "Dago Atas", "Tubagus Ismail No. 22", 0.45, paidAmountRp = 13000),
+                            PatunganMember(3, "Laras", "Dago Bawah", "Dago Bawah No. 31", 0.62, paidAmountRp = 13000),
+                            PatunganMember(4, "Bagas", "Dago Pojok", "Dago Pojok No. 11", 0.88, paidAmountRp = 13000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 700_000L
+                ),
+                // 6. Warung Kue Teh Rina: 5/5 PATUNGAN PENUH (already departed / ready for Driver demo!)
+                PatunganGroupEntity(
+                    id = "patungan_prod_kue_subuh_teh_rina",
+                    productId = "prod_kue_subuh_teh_rina",
+                    productTitle = "Jajanan Pasar Campur Teh Rina",
+                    storeName = "Warung Kue Teh Rina",
+                    storeAddress = "Jl. Siliwangi No. 12",
+                    imageKey = "jajanan",
+                    bagPriceRp = 10000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Siti", "Dago Atas", "Dago Atas No. 12", 0.30, paidAmountRp = 13000),
+                            PatunganMember(2, "Budi", "Dago Bawah", "Dago Bawah No. 5", 0.45, paidAmountRp = 13000),
+                            PatunganMember(3, "Andi", "Dago Atas", "Dago Atas No. 8", 0.60, paidAmountRp = 13000),
+                            PatunganMember(4, "Rina", "Dago Pojok", "Dago Pojok No. 3", 0.78, paidAmountRp = 13000),
+                            PatunganMember(5, "Dian", "Cisitu Dago", "Cisitu Indah No. 19", 0.92, paidAmountRp = 13000)
+                        )
+                    ),
+                    status = PatunganStatus.BERANGKAT.name,
+                    driverStage = DriverStage.MENUJU_TOKO.name,
+                    etaMinutes = 12,
+                    createdAtMillis = now - 800_000L
+                ),
+                // 7. Kedai Kopi Dago: 1/5 (if user joins -> 2/5 -> great for testing Gagal Penuh <3 orang!)
+                PatunganGroupEntity(
+                    id = "patungan_prod_kopi_dago",
+                    productId = "prod_kopi_dago",
+                    productTitle = "Paket Es Kopi Susu & Camilan Sore",
+                    storeName = "Kedai Kopi Dago",
+                    storeAddress = "Jl. Dago No. 55",
+                    imageKey = "lainnya",
+                    bagPriceRp = 11000,
+                    areaName = PatunganArea.DAGO.areaName,
+                    pickupSlot = "19.00 - 19.30",
+                    cutoffHour = "19.00",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Gilang", "Dago Bawah", "Dago Bawah No. 19", 0.40, paidAmountRp = 14000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 900_000L
+                ),
+                // 8. Warung Buah Cihampelas: Area Cihampelas 3/5
+                PatunganGroupEntity(
+                    id = "patungan_prod_salad_buah_dago",
+                    productId = "prod_salad_buah_dago",
+                    productTitle = "Paket Rujak & Buah Potong Dingin",
+                    storeName = "Warung Buah Cihampelas",
+                    storeAddress = "Jl. Cihampelas No. 67",
+                    imageKey = "buah",
+                    bagPriceRp = 12000,
+                    areaName = PatunganArea.CIHAMPELAS.areaName,
+                    pickupSlot = "19.30 - 20.00",
+                    cutoffHour = "19.15",
+                    departHour = "19.30",
+                    membersJson = serializePatunganMembers(
+                        listOf(
+                            PatunganMember(1, "Vina", "Cihampelas Atas", "Cihampelas No. 14", 0.35, paidAmountRp = 15000),
+                            PatunganMember(2, "Arif", "Tamansari", "Tamansari No. 28", 0.58, paidAmountRp = 15000),
+                            PatunganMember(3, "Siska", "Cihampelas Bawah", "Cihampelas No. 92", 0.80, paidAmountRp = 15000)
+                        )
+                    ),
+                    status = PatunganStatus.OPEN.name,
+                    createdAtMillis = now - 950_000L
+                )
+            )
+            db.patunganDao().insertAll(groups)
         }
     }
 }

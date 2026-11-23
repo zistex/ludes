@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.outlined.StarOutline
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -69,6 +70,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.OrderEntity
 import com.example.data.OrderStatus
+import com.example.data.PatunganGroupEntity
+import com.example.data.PatunganStatus
 import com.example.data.formatRupiah
 import com.example.data.formatRupiahShort
 import com.example.ui.SisaEnakUiState
@@ -99,6 +102,7 @@ fun OrdersTabScreen(
     uiState: SisaEnakUiState,
     onOpenOrderDetail: (OrderEntity) -> Unit,
     onOpenRating: (OrderEntity) -> Unit,
+    onOpenPatunganGroup: (PatunganGroupEntity) -> Unit = {},
     onExploreHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -106,7 +110,16 @@ fun OrdersTabScreen(
 
     val activeOrders = uiState.orders.filter { it.status == OrderStatus.BELUM_DIAMBIL.name }
     val historyOrders = uiState.orders.filter { it.status != OrderStatus.BELUM_DIAMBIL.name }
+    val activePatungans = uiState.patunganGroups.filter {
+        it.userJoined && (it.status == PatunganStatus.OPEN.name ||
+            it.status == PatunganStatus.BERANGKAT.name ||
+            it.status == PatunganStatus.GAGAL_PENUH.name)
+    }
+    val historyPatungans = uiState.patunganGroups.filter {
+        it.userJoined && it.status == PatunganStatus.SELESAI.name
+    }
     val displayedOrders = if (selectedTab == 0) activeOrders else historyOrders
+    val displayedPatungans = if (selectedTab == 0) activePatungans else historyPatungans
 
     Box(
         modifier = modifier
@@ -140,8 +153,8 @@ fun OrdersTabScreen(
                         .padding(4.dp)
                 ) {
                     val tabs = listOf(
-                        "Aktif (${activeOrders.size})",
-                        "Riwayat (${historyOrders.size})"
+                        "Aktif (${activeOrders.size + activePatungans.size})",
+                        "Riwayat (${historyOrders.size + historyPatungans.size})"
                     )
                     tabs.forEachIndexed { idx, label ->
                         val isSelected = selectedTab == idx
@@ -169,7 +182,7 @@ fun OrdersTabScreen(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            if (displayedOrders.isEmpty()) {
+            if (displayedOrders.isEmpty() && displayedPatungans.isEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = BgWhite,
@@ -194,7 +207,7 @@ fun OrdersTabScreen(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Yuk selamatkan makanan enak di Beranda dengan ambil sendiri gratis!",
+                            text = "Yuk selamatkan makanan enak di Beranda dengan ambil sendiri gratis atau Patungan Gojek!",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextGray,
                             textAlign = TextAlign.Center
@@ -211,6 +224,12 @@ fun OrdersTabScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(bottom = 16.dp)
                 ) {
+                    items(displayedPatungans, key = { "patungan_${it.id}" }) { group ->
+                        PatunganOrderListCard(
+                            group = group,
+                            onClick = { onOpenPatunganGroup(group) }
+                        )
+                    }
                     items(displayedOrders, key = { it.id }) { order ->
                         OrderListCard(
                             order = order,
@@ -220,6 +239,83 @@ fun OrdersTabScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PatunganOrderListCard(
+    group: PatunganGroupEntity,
+    onClick: () -> Unit
+) {
+    val statusLabel = when (group.status) {
+        PatunganStatus.OPEN.name -> "Menunggu Teman (${group.filledSlots}/${group.maxSlots})"
+        PatunganStatus.BERANGKAT.name -> "Patungan Berangkat!"
+        PatunganStatus.GAGAL_PENUH.name -> "Patungan Belum Penuh"
+        PatunganStatus.SELESAI.name -> "Selesai Diantar"
+        else -> "Patungan Gojek"
+    }
+    val badgeBg = when (group.status) {
+        PatunganStatus.GAGAL_PENUH.name -> LiveRedSoft
+        PatunganStatus.BERANGKAT.name, PatunganStatus.SELESAI.name -> FreshGreenSoft
+        else -> ActionOrangeSoft
+    }
+    val badgeText = when (group.status) {
+        PatunganStatus.GAGAL_PENUH.name -> LiveRed
+        PatunganStatus.BERANGKAT.name, PatunganStatus.SELESAI.name -> FreshGreenDark
+        else -> ActionOrangeDark
+    }
+
+    Card(
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = BgWhite),
+        border = BorderStroke(1.2.dp, ActionOrange.copy(alpha = 0.45f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("patungan_order_card_${group.id}")
+            .clickable { onClick() }
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.TwoWheeler,
+                        contentDescription = "Patungan Gojek",
+                        tint = ActionOrangeDark,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Patungan Gojek • Area ${group.areaName}",
+                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                        color = ActionOrangeDark
+                    )
+                }
+                Surface(shape = RoundedCornerShape(50), color = badgeBg) {
+                    Text(
+                        text = statusLabel,
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                        color = badgeText,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = "${group.productTitle} — ${group.storeName}",
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                color = TextBlack
+            )
+            Text(
+                text = "Berangkat jam ${group.departHour} • Total bayar ${formatRupiah(group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp))}",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextGray
+            )
         }
     }
 }

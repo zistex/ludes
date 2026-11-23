@@ -6,6 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.FavoriteStoreEntity
 import com.example.data.FoodCategory
 import com.example.data.OrderEntity
+import com.example.data.PatunganGroupEntity
+import com.example.data.PatunganPaymentOption
+import com.example.data.PatunganStatus
 import com.example.data.PaymentMethod
 import com.example.data.ProductEntity
 import com.example.data.ProductReviewEntity
@@ -71,6 +74,7 @@ data class SisaEnakUiState(
     val viewedHistory: List<ViewedHistoryEntity> = emptyList(),
     val withdrawRequests: List<WithdrawRequestEntity> = emptyList(),
     val productReviews: List<ProductReviewEntity> = emptyList(),
+    val patunganGroups: List<PatunganGroupEntity> = emptyList(),
     val notifications: List<AppNotification> = emptyList(),
     val userPrefs: UserProfilePrefs = UserProfilePrefs(),
     val isAuthReady: Boolean = false,
@@ -187,22 +191,30 @@ class SisaEnakViewModel(application: Application) : AndroidViewModel(application
         UiInputs(query, cat, slot, pay, lastOrder)
     }
 
+    private data class ExtraListsSnapshot(
+        val history: List<ViewedHistoryEntity>,
+        val withdraws: List<WithdrawRequestEntity>,
+        val reviews: List<ProductReviewEntity>,
+        val patungans: List<PatunganGroupEntity>
+    )
+
     val uiState: StateFlow<SisaEnakUiState> = combine(
         dataFlow,
         combine(
             repository.viewedHistory,
             repository.withdrawRequests,
-            repository.productReviews
-        ) { h, w, r -> Triple(h, w, r) },
+            repository.productReviews,
+            repository.patunganGroups
+        ) { h, w, r, p -> ExtraListsSnapshot(h, w, r, p) },
         repository.userPrefs,
         uiInputsFlow,
         combine(snackbarMessage, liveComments, readNotificationIds) { snack, comments, readIds ->
             Triple(snack, comments, readIds)
         }
-    ) { data, (history, withdraws, reviews), prefs, inputs, (snack, comments, readIds) ->
+    ) { data, extras, prefs, inputs, (snack, comments, readIds) ->
         val builtNotifications = buildAppNotifications(
             orders = data.orders,
-            withdrawRequests = withdraws,
+            withdrawRequests = extras.withdraws,
             liveProducts = data.liveProducts,
             readIds = readIds
         )
@@ -224,9 +236,10 @@ class SisaEnakViewModel(application: Application) : AndroidViewModel(application
             favoriteProducts = withUserDistance(data.favProducts),
             favoriteStores = data.favStores,
             orders = data.orders,
-            viewedHistory = history,
-            withdrawRequests = withdraws,
-            productReviews = reviews,
+            viewedHistory = extras.history,
+            withdrawRequests = extras.withdraws,
+            productReviews = extras.reviews,
+            patunganGroups = extras.patungans,
             notifications = builtNotifications,
             userPrefs = prefs,
             isAuthReady = true,
@@ -641,5 +654,165 @@ class SisaEnakViewModel(application: Application) : AndroidViewModel(application
 
     fun showMessage(message: String) {
         snackbarMessage.value = message
+    }
+
+    fun preparePatunganForProduct(product: ProductEntity, onReady: (PatunganGroupEntity) -> Unit) {
+        viewModelScope.launch {
+            val group = repository.getOrCreatePatunganForProduct(product)
+            onReady(group)
+        }
+    }
+
+    fun joinPatungan(
+        product: ProductEntity,
+        groupId: String,
+        userAreaDetail: String,
+        userAddressLabel: String,
+        paymentOption: PatunganPaymentOption,
+        onResult: (PatunganGroupEntity?) -> Unit
+    ) {
+        viewModelScope.launch {
+            val updated = repository.joinPatungan(
+                product = product,
+                groupId = groupId,
+                userAreaDetail = userAreaDetail,
+                userAddressLabel = userAddressLabel,
+                paymentOption = paymentOption
+            )
+            if (updated == null) {
+                snackbarMessage.value = if (paymentOption == PatunganPaymentOption.SALDO_LUDES) {
+                    "Saldo LUDES belum cukup atau slot patungan sudah penuh."
+                } else {
+                    "Slot patungan sudah penuh."
+                }
+            } else if (updated.status == PatunganStatus.BERANGKAT.name) {
+                snackbarMessage.value = "Patungan 5/5 penuh! Driver Pak Agus segera berangkat."
+            } else {
+                snackbarMessage.value = "Pembayaran ditahan di LUDES. Menunggu teman patungan!"
+            }
+            onResult(updated)
+        }
+    }
+
+    fun joinSoloFullDelivery(
+        product: ProductEntity,
+        userAreaDetail: String,
+        userAddressLabel: String,
+        paymentOption: PatunganPaymentOption,
+        onResult: (PatunganGroupEntity?) -> Unit
+    ) {
+        viewModelScope.launch {
+            val created = repository.joinSoloFullDelivery(
+                product = product,
+                userAreaDetail = userAreaDetail,
+                userAddressLabel = userAddressLabel,
+                paymentOption = paymentOption
+            )
+            if (created == null) {
+                snackbarMessage.value = "Saldo LUDES belum cukup untuk pembayaran penuh."
+            } else {
+                snackbarMessage.value = "Pembayaran penuh berhasil! Driver Gojek langsung menuju toko."
+            }
+            onResult(created)
+        }
+    }
+
+    fun cancelPatungan(groupId: String, onCancelled: () -> Unit) {
+        viewModelScope.launch {
+            val refund = repository.cancelPatungan(groupId)
+            if (refund > 0) {
+                snackbarMessage.value = "Patungan dibatalkan. Dana ${formatRupiah(refund)} kembali jadi Saldo LUDES."
+            }
+            onCancelled()
+        }
+    }
+
+    fun simulateNeighborJoin(groupId: String, onDeparted: () -> Unit) {
+        viewModelScope.launch {
+            val updated = repository.simulateNeighborJoin(groupId)
+            if (updated?.status == PatunganStatus.BERANGKAT.name) {
+                snackbarMessage.value = "5/5 orang terkumpul! Patungan Gojek berangkat!"
+                onDeparted()
+            } else {
+                snackbarMessage.value = "1 tetangga ikut bergabung ke patungan!"
+            }
+        }
+    }
+
+    fun simulatePatunganCutoff(
+        groupId: String,
+        forceFailUnderMin: Boolean = false,
+        onDeparted: () -> Unit,
+        onFailed: () -> Unit
+    ) {
+        viewModelScope.launch {
+            val updated = repository.simulatePatunganCutoff(groupId, forceFailUnderMin)
+            when (updated?.status) {
+                PatunganStatus.BERANGKAT.name -> {
+                    snackbarMessage.value = "Minimal 3 orang tercapai! Patungan berangkat."
+                    onDeparted()
+                }
+                PatunganStatus.GAGAL_PENUH.name -> {
+                    snackbarMessage.value = "Batas jam 19.00 habis dan peserta belum memenuhi minimal 3 orang."
+                    onFailed()
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun resolveFailedKeepSoloDelivery(groupId: String, onDeparted: () -> Unit) {
+        viewModelScope.launch {
+            val updated = repository.resolveFailedKeepSoloDelivery(groupId)
+            if (updated != null) {
+                snackbarMessage.value = "Ongkir tambahan Rp12.000 terkonfirmasi. Driver segera mengantar ke rumahmu!"
+                onDeparted()
+            }
+        }
+    }
+
+    fun resolveFailedSwitchToPickup(groupId: String, onConvertedToOrder: (OrderEntity) -> Unit) {
+        viewModelScope.launch {
+            val order = repository.resolveFailedSwitchToPickup(groupId)
+            if (order != null) {
+                snackbarMessage.value = "Ongkir Rp3.000 dikembalikan ke Saldo LUDES. Silakan ambil langsung di toko!"
+                onConvertedToOrder(order)
+            }
+        }
+    }
+
+    fun resolveFailedCancelAll(groupId: String, onCancelled: () -> Unit) {
+        viewModelScope.launch {
+            val refund = repository.resolveFailedCancelAll(groupId)
+            if (refund > 0) {
+                snackbarMessage.value = "Patungan dibatalkan. Uang ${formatRupiah(refund)} kembali ke Saldo LUDES."
+            }
+            onCancelled()
+        }
+    }
+
+    fun advanceDriverStage(groupId: String) {
+        viewModelScope.launch {
+            val updated = repository.advanceDriverStage(groupId)
+            if (updated?.status == PatunganStatus.SELESAI.name) {
+                snackbarMessage.value = "Semua kantong sampai! Dana diteruskan H+1 ke warung & driver."
+            }
+        }
+    }
+
+    fun driverMarkPickedUpAtStore(groupId: String) {
+        viewModelScope.launch {
+            repository.driverMarkPickedUpAtStore(groupId)
+            snackbarMessage.value = "Driver sudah ambil semua kantong di toko!"
+        }
+    }
+
+    fun driverMarkMemberDelivered(groupId: String, slotIndex: Int) {
+        viewModelScope.launch {
+            val updated = repository.driverMarkMemberDelivered(groupId, slotIndex)
+            if (updated?.status == PatunganStatus.SELESAI.name) {
+                snackbarMessage.value = "Order patungan selesai! Dana H+1 siap diteruskan ke warung & driver."
+            }
+        }
     }
 }

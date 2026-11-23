@@ -13,6 +13,7 @@ class SisaEnakRepository(
     private val viewedHistoryDao = database.viewedHistoryDao()
     private val withdrawDao = database.withdrawDao()
     private val productReviewDao = database.productReviewDao()
+    private val patunganDao = database.patunganDao()
 
     val products: Flow<List<ProductEntity>> = productDao.observeAllProducts()
     val liveProducts: Flow<List<ProductEntity>> = productDao.observeLiveProducts()
@@ -22,6 +23,7 @@ class SisaEnakRepository(
     val viewedHistory: Flow<List<ViewedHistoryEntity>> = viewedHistoryDao.observeHistory()
     val withdrawRequests: Flow<List<WithdrawRequestEntity>> = withdrawDao.observeAllWithdraws()
     val productReviews: Flow<List<ProductReviewEntity>> = productReviewDao.observeAllReviews()
+    val patunganGroups: Flow<List<PatunganGroupEntity>> = patunganDao.observeAllPatungan()
     val userPrefs: Flow<UserProfilePrefs> = prefsRepo.userPrefs
 
     suspend fun initialize() {
@@ -292,5 +294,374 @@ class SisaEnakRepository(
             productDao.adjustStock(order.productId, +1)
             prefsRepo.adjustWallet(order.totalPaid)
         }
+    }
+
+    suspend fun getOrCreatePatunganForProduct(product: ProductEntity): PatunganGroupEntity {
+        val existing = patunganDao.getByProductId(product.id)
+        if (existing != null) return existing
+
+        val area = resolvePatunganAreaForProduct(product)
+        val firstSlot = product.pickupSlotsCsv.split(",").firstOrNull()?.trim().orEmpty()
+            .ifBlank { "19.00 - 19.30" }
+        val newGroup = PatunganGroupEntity(
+            id = "patungan_${product.id}",
+            productId = product.id,
+            productTitle = product.title,
+            storeName = product.storeName,
+            storeAddress = product.storeAddress,
+            imageKey = product.imageKey,
+            bagPriceRp = product.discountPrice,
+            areaName = area.areaName,
+            pickupSlot = firstSlot,
+            cutoffHour = "19.00",
+            departHour = "19.30",
+            membersJson = serializePatunganMembers(
+                listOf(
+                    PatunganMember(
+                        slotIndex = 1,
+                        aliasName = "Siti",
+                        areaDetail = area.subZones.firstOrNull() ?: area.areaName,
+                        addressLabel = "${area.subZones.firstOrNull() ?: area.areaName} No. 12",
+                        distanceKmFromStore = 0.42,
+                        paidAmountRp = product.discountPrice + 3000
+                    )
+                )
+            ),
+            status = PatunganStatus.OPEN.name
+        )
+        patunganDao.upsert(newGroup)
+        return newGroup
+    }
+
+    suspend fun joinPatungan(
+        product: ProductEntity,
+        groupId: String,
+        userAreaDetail: String,
+        userAddressLabel: String,
+        paymentOption: PatunganPaymentOption
+    ): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: getOrCreatePatunganForProduct(product)
+        val currentMembers = group.members.toMutableList()
+
+        if (group.userJoined && currentMembers.any { it.isCurrentUser }) {
+            return group
+        }
+        if (currentMembers.size >= group.maxSlots || group.status != PatunganStatus.OPEN.name) {
+            return null
+        }
+
+        val totalPay = group.bagPriceRp + group.patunganShippingRp
+        if (paymentOption == PatunganPaymentOption.SALDO_LUDES) {
+            val currentWallet = prefsRepo.userPrefs.first().walletBalanceRp
+            if (currentWallet < totalPay) return null
+            prefsRepo.adjustWallet(-totalPay)
+        }
+
+        val nextSlot = currentMembers.size + 1
+        val userDist = (0.45 + nextSlot * 0.12).coerceAtMost(0.95)
+        currentMembers += PatunganMember(
+            slotIndex = nextSlot,
+            aliasName = "Kamu",
+            areaDetail = userAreaDetail.ifBlank { group.areaName },
+            addressLabel = userAddressLabel.ifBlank { "$userAreaDetail No. 15" },
+            distanceKmFromStore = userDist,
+            isCurrentUser = true,
+            isDelivered = false,
+            paidAmountRp = totalPay
+        )
+
+        productDao.adjustStock(product.id, -1)
+
+        val isNowFull = currentMembers.size >= group.maxSlots
+        val updated = group.copy(
+            membersJson = serializePatunganMembers(currentMembers),
+            status = if (isNowFull) PatunganStatus.BERANGKAT.name else PatunganStatus.OPEN.name,
+            userJoined = true,
+            userPaymentMethod = paymentOption.label,
+            userTotalPaidRp = totalPay,
+            fundsHeldInEscrow = true,
+            driverStage = if (isNowFull) DriverStage.MENUJU_TOKO.name else group.driverStage,
+            etaMinutes = if (isNowFull) 10 else group.etaMinutes
+        )
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun joinSoloFullDelivery(
+        product: ProductEntity,
+        userAreaDetail: String,
+        userAddressLabel: String,
+        paymentOption: PatunganPaymentOption
+    ): PatunganGroupEntity? {
+        val area = resolvePatunganAreaForProduct(product)
+        val normalShipping = 15000
+        val totalPay = product.discountPrice + normalShipping
+        if (paymentOption == PatunganPaymentOption.SALDO_LUDES) {
+            val currentWallet = prefsRepo.userPrefs.first().walletBalanceRp
+            if (currentWallet < totalPay) return null
+            prefsRepo.adjustWallet(-totalPay)
+        }
+
+        val userName = prefsRepo.userPrefs.first().userName.ifBlank { "Kamu" }
+        val soloZone = userAreaDetail.ifBlank { area.subZones.firstOrNull() ?: area.areaName }
+        val soloAddress = userAddressLabel.ifBlank { "$soloZone No. 15" }
+        val firstSlot = product.pickupSlotsCsv.split(",").firstOrNull()?.trim().orEmpty()
+            .ifBlank { "19.00 - 19.30" }
+
+        val stamp = System.currentTimeMillis()
+        val soloGroup = PatunganGroupEntity(
+            id = "solo_${product.id}_$stamp",
+            productId = "${product.id}__solo_$stamp",
+            productTitle = product.title,
+            storeName = product.storeName,
+            storeAddress = product.storeAddress,
+            imageKey = product.imageKey,
+            bagPriceRp = product.discountPrice,
+            patunganShippingRp = normalShipping,
+            normalShippingRp = normalShipping,
+            areaName = area.areaName,
+            pickupSlot = firstSlot,
+            cutoffHour = "Langsung",
+            departHour = "Sekarang",
+            minSlotsToDepart = 1,
+            maxSlots = 1,
+            membersJson = serializePatunganMembers(
+                listOf(
+                    PatunganMember(
+                        slotIndex = 1,
+                        aliasName = userName,
+                        areaDetail = soloZone,
+                        addressLabel = soloAddress,
+                        distanceKmFromStore = 0.65,
+                        isCurrentUser = true,
+                        isDelivered = false,
+                        paidAmountRp = totalPay
+                    )
+                )
+            ),
+            status = PatunganStatus.BERANGKAT.name,
+            userJoined = true,
+            userPaymentMethod = paymentOption.label,
+            userTotalPaidRp = totalPay,
+            fundsHeldInEscrow = true,
+            driverName = "Pak Agus",
+            driverPlate = "Motor B 1234 XYZ",
+            driverRating = 4.9,
+            driverStage = DriverStage.MENUJU_TOKO.name,
+            hasPickedUpAtStore = false,
+            etaMinutes = 12,
+            isSoloFallbackDelivery = true
+        )
+
+        productDao.adjustStock(product.id, -1)
+        patunganDao.upsert(soloGroup)
+        return soloGroup
+    }
+
+    suspend fun cancelPatungan(groupId: String): Int {
+        val group = patunganDao.getById(groupId) ?: return 0
+        if (!group.userJoined) return 0
+
+        val refund = group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp)
+        prefsRepo.adjustWallet(refund)
+        productDao.adjustStock(group.productId, +1)
+
+        val remainingMembers = group.members.filterNot { it.isCurrentUser }
+            .mapIndexed { idx, m -> m.copy(slotIndex = idx + 1) }
+
+        val updated = group.copy(
+            membersJson = serializePatunganMembers(remainingMembers),
+            status = PatunganStatus.OPEN.name,
+            userJoined = false,
+            fundsHeldInEscrow = false,
+            userTotalPaidRp = 0
+        )
+        patunganDao.upsert(updated)
+        return refund
+    }
+
+    suspend fun simulateNeighborJoin(groupId: String): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val members = group.members.toMutableList()
+        if (members.size >= group.maxSlots) return group
+
+        val area = PatunganArea.entries.firstOrNull { it.areaName == group.areaName } ?: PatunganArea.DAGO
+        val aliasPool = listOf("Rina", "Dian", "Tono", "Nadia", "Fajar")
+        val nextSlot = members.size + 1
+        val neighborName = aliasPool[(nextSlot - 1) % aliasPool.size]
+        val subZone = area.subZones[(nextSlot - 1) % area.subZones.size]
+        members += PatunganMember(
+            slotIndex = nextSlot,
+            aliasName = neighborName,
+            areaDetail = subZone,
+            addressLabel = "$subZone No. ${10 + nextSlot * 3}",
+            distanceKmFromStore = (0.35 + nextSlot * 0.12).coerceAtMost(0.95),
+            isCurrentUser = false,
+            isDelivered = false,
+            paidAmountRp = group.bagPriceRp + group.patunganShippingRp
+        )
+
+        val isFull = members.size >= group.maxSlots
+        val updated = group.copy(
+            membersJson = serializePatunganMembers(members),
+            status = if (isFull) PatunganStatus.BERANGKAT.name else PatunganStatus.OPEN.name,
+            driverStage = if (isFull) DriverStage.MENUJU_TOKO.name else group.driverStage,
+            etaMinutes = 10
+        )
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun simulatePatunganCutoff(groupId: String, forceFailUnderMin: Boolean = false): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val members = group.members
+        val updated = if (forceFailUnderMin) {
+            // Keep max 2 members (including current user if present) to demonstrate Failed screen cleanly
+            val userMember = members.firstOrNull { it.isCurrentUser }
+            val otherMember = members.firstOrNull { !it.isCurrentUser }
+            val reduced = listOfNotNull(otherMember, userMember)
+                .take(2)
+                .mapIndexed { index, m -> m.copy(slotIndex = index + 1) }
+            group.copy(
+                membersJson = serializePatunganMembers(reduced),
+                status = PatunganStatus.GAGAL_PENUH.name
+            )
+        } else if (members.size < group.minSlotsToDepart) {
+            group.copy(status = PatunganStatus.GAGAL_PENUH.name)
+        } else {
+            group.copy(
+                status = PatunganStatus.BERANGKAT.name,
+                driverStage = DriverStage.MENUJU_TOKO.name,
+                etaMinutes = 10
+            )
+        }
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun resolveFailedKeepSoloDelivery(groupId: String): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val extraCost = group.normalShippingRp - group.patunganShippingRp // Rp12.000
+        val currentUserName = prefsRepo.userPrefs.first().userName.ifBlank { "Kamu" }
+        val userMember = group.members.firstOrNull { it.isCurrentUser }
+            ?: PatunganMember(1, currentUserName, group.areaName, "${group.areaName} No. 15", 0.6, isCurrentUser = true)
+        val totalSoloPaid = group.bagPriceRp + group.normalShippingRp
+        val soloList = listOf(
+            userMember.copy(slotIndex = 1, paidAmountRp = totalSoloPaid)
+        )
+        val updated = group.copy(
+            membersJson = serializePatunganMembers(soloList),
+            status = PatunganStatus.BERANGKAT.name,
+            userTotalPaidRp = group.userTotalPaidRp + extraCost,
+            isSoloFallbackDelivery = true,
+            driverStage = DriverStage.MENUJU_TOKO.name,
+            etaMinutes = 12
+        )
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun resolveFailedSwitchToPickup(groupId: String): OrderEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val product = productDao.getProductById(group.productId) ?: return null
+        val shippingRefund = group.patunganShippingRp // Rp3.000 kembali ke Saldo LUDES
+        prefsRepo.adjustWallet(shippingRefund)
+
+        val updatedGroup = group.copy(
+            status = PatunganStatus.DIBATALKAN.name,
+            userJoined = false,
+            fundsHeldInEscrow = false
+        )
+        patunganDao.upsert(updatedGroup)
+
+        val buyerName = prefsRepo.userPrefs.first().userName.ifBlank { "Siti Rahma" }
+        val order = OrderEntity(
+            id = "#PT${(100000..999999).random()}",
+            productId = product.id,
+            productTitle = product.title,
+            storeName = product.storeName,
+            storeAddress = product.storeAddress,
+            distanceText = product.distanceText,
+            imageKey = product.imageKey,
+            originalPrice = product.originalPrice,
+            bagPrice = product.discountPrice,
+            serviceFee = 0,
+            totalPaid = product.discountPrice,
+            paymentMethod = group.userPaymentMethod.ifBlank { "Saldo LUDES" },
+            pickupSlot = group.pickupSlot,
+            status = OrderStatus.BELUM_DIAMBIL.name,
+            isReadyForPickup = true,
+            merchantAccepted = true,
+            buyerName = buyerName,
+            createdAtMillis = System.currentTimeMillis()
+        )
+        orderDao.upsert(order)
+        return order
+    }
+
+    suspend fun resolveFailedCancelAll(groupId: String): Int {
+        return cancelPatungan(groupId)
+    }
+
+    suspend fun advanceDriverStage(groupId: String): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val current = DriverStage.entries.firstOrNull { it.name == group.driverStage } ?: DriverStage.MENUJU_TOKO
+        val next = when (current) {
+            DriverStage.MENUJU_TOKO -> DriverStage.AMBIL_KANTONG
+            DriverStage.AMBIL_KANTONG -> DriverStage.DALAM_PERJALANAN
+            DriverStage.DALAM_PERJALANAN -> DriverStage.SAMPAI
+            DriverStage.SAMPAI -> DriverStage.SAMPAI
+        }
+        val members = group.members
+        val updatedMembers = if (next == DriverStage.SAMPAI) {
+            members.map { it.copy(isDelivered = true) }
+        } else {
+            members
+        }
+        val updated = group.copy(
+            driverStage = next.name,
+            hasPickedUpAtStore = next.stepIndex >= DriverStage.AMBIL_KANTONG.stepIndex,
+            etaMinutes = when (next) {
+                DriverStage.MENUJU_TOKO -> 12
+                DriverStage.AMBIL_KANTONG -> 10
+                DriverStage.DALAM_PERJALANAN -> 6
+                DriverStage.SAMPAI -> 0
+            },
+            membersJson = serializePatunganMembers(updatedMembers),
+            status = if (next == DriverStage.SAMPAI) PatunganStatus.SELESAI.name else PatunganStatus.BERANGKAT.name,
+            fundsHeldInEscrow = next != DriverStage.SAMPAI
+        )
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun driverMarkPickedUpAtStore(groupId: String): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val updated = group.copy(
+            hasPickedUpAtStore = true,
+            driverStage = DriverStage.DALAM_PERJALANAN.name,
+            status = PatunganStatus.BERANGKAT.name,
+            etaMinutes = 8
+        )
+        patunganDao.upsert(updated)
+        return updated
+    }
+
+    suspend fun driverMarkMemberDelivered(groupId: String, slotIndex: Int): PatunganGroupEntity? {
+        val group = patunganDao.getById(groupId) ?: return null
+        val updatedMembers = group.members.map { m ->
+            if (m.slotIndex == slotIndex) m.copy(isDelivered = true) else m
+        }
+        val allDelivered = updatedMembers.isNotEmpty() && updatedMembers.all { it.isDelivered }
+        val updated = group.copy(
+            membersJson = serializePatunganMembers(updatedMembers),
+            driverStage = if (allDelivered) DriverStage.SAMPAI.name else DriverStage.DALAM_PERJALANAN.name,
+            status = if (allDelivered) PatunganStatus.SELESAI.name else PatunganStatus.BERANGKAT.name,
+            hasPickedUpAtStore = true,
+            etaMinutes = if (allDelivered) 0 else (updatedMembers.count { !it.isDelivered } * 3).coerceAtLeast(2),
+            fundsHeldInEscrow = !allDelivered
+        )
+        patunganDao.upsert(updated)
+        return updated
     }
 }

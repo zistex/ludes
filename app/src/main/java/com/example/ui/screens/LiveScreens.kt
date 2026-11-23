@@ -56,6 +56,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.Add
@@ -65,6 +66,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.LocationOn
 import androidx.compose.material.icons.filled.ModeComment
@@ -76,6 +78,7 @@ import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -85,6 +88,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -129,10 +133,15 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.OrderEntity
+import com.example.data.PatunganArea
+import com.example.data.PatunganGroupEntity
+import com.example.data.PatunganPaymentOption
+import com.example.data.PatunganStatus
 import com.example.data.PaymentMethod
 import com.example.data.ProductEntity
 import com.example.data.ProductReviewEntity
 import com.example.data.formatRupiah
+import com.example.data.resolvePatunganAreaForProduct
 import com.example.ui.LiveComment
 import com.example.ui.SisaEnakUiState
 import com.example.ui.components.FoodProductImage
@@ -141,6 +150,7 @@ import com.example.ui.components.PrimaryOrangeButton
 import com.example.ui.components.QrCodeCard
 import com.example.ui.components.SecondaryGreenButton
 import com.example.ui.theme.ActionOrange
+import com.example.ui.theme.ActionOrangeBorder
 import com.example.ui.theme.ActionOrangeDark
 import com.example.ui.theme.ActionOrangeSoft
 import com.example.ui.theme.BgLightGray
@@ -163,10 +173,16 @@ private data class FloatingHeart(
     val startOffset: Offset
 )
 
+private enum class LiveDeliveryMode {
+    AMBIL_SENDIRI,
+    PATUNGAN,
+    BAYAR_FULL
+}
+
 /**
  * Tab Live & Video — Persis TikTok Live!
  * Swipe atas/bawah antar warung Live dengan VerticalPager,
- * keranjang kuning/oranye + pinned product card + modal bottom sheet pesan langsung di tempat.
+ * info Patungan Gojek real-time, keranjang kuning/oranye + pinned product card + modal bottom sheet pesan langsung di tempat.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -177,6 +193,10 @@ fun LiveTabScreen(
     onSelectSlot: (String) -> Unit,
     onSelectPayment: (PaymentMethod) -> Unit,
     onPlaceLiveOrder: (ProductEntity, (OrderEntity) -> Unit) -> Unit,
+    onPreparePatungan: (ProductEntity, (PatunganGroupEntity) -> Unit) -> Unit = { _, _ -> },
+    onJoinPatunganFromLive: (ProductEntity, String, String, String, PatunganPaymentOption, (PatunganGroupEntity?) -> Unit) -> Unit = { _, _, _, _, _, _ -> },
+    onJoinSoloFullFromLive: (ProductEntity, String, String, PatunganPaymentOption, (PatunganGroupEntity?) -> Unit) -> Unit = { _, _, _, _, _ -> },
+    onOpenPatunganGroup: (PatunganGroupEntity) -> Unit = {},
     onSendComment: (String, String?) -> Unit,
     onNavigateToOrders: () -> Unit,
     modifier: Modifier = Modifier
@@ -184,10 +204,15 @@ fun LiveTabScreen(
     val liveList = uiState.liveProducts.ifEmpty { uiState.products.take(4) }
     val pagerState = rememberPagerState(pageCount = { liveList.size.coerceAtLeast(1) })
     val scope = rememberCoroutineScope()
+    val patunganByProduct = remember(uiState.patunganGroups) {
+        uiState.patunganGroups.associateBy { it.productId }
+    }
 
     var showGridOverlay by remember { mutableStateOf(false) }
     var activeOrderSheetProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var activeSheetInitialMode by remember { mutableStateOf(LiveDeliveryMode.AMBIL_SENDIRI) }
     var completedLiveOrder by remember { mutableStateOf<OrderEntity?>(null) }
+    var completedLivePatungan by remember { mutableStateOf<PatunganGroupEntity?>(null) }
     var activeCommentSheetProduct by remember { mutableStateOf<ProductEntity?>(null) }
 
     Box(
@@ -208,6 +233,7 @@ fun LiveTabScreen(
                 modifier = Modifier.fillMaxSize()
             ) { pageIndex ->
                 val product = liveList[pageIndex]
+                val patunganGroup = patunganByProduct[product.id]
                 val productSpecificComments = remember(uiState.liveComments, product.id) {
                     uiState.liveComments.filter { it.productId == null || it.productId == product.id }
                 }
@@ -216,6 +242,7 @@ fun LiveTabScreen(
                 }
                 TikTokLiveStreamPage(
                     product = product,
+                    patunganGroup = patunganGroup,
                     pageIndex = pageIndex,
                     totalPages = liveList.size,
                     comments = productSpecificComments,
@@ -224,8 +251,23 @@ fun LiveTabScreen(
                     onOpenGrid = { showGridOverlay = true },
                     onOpenDirectOrder = {
                         onInitCheckout(product)
+                        onPreparePatungan(product) {}
                         completedLiveOrder = null
+                        completedLivePatungan = null
+                        activeSheetInitialMode = LiveDeliveryMode.AMBIL_SENDIRI
                         activeOrderSheetProduct = product
+                    },
+                    onOpenPatunganOrder = {
+                        if (patunganGroup != null && patunganGroup.userJoined) {
+                            onOpenPatunganGroup(patunganGroup)
+                        } else {
+                            onInitCheckout(product)
+                            onPreparePatungan(product) {}
+                            completedLiveOrder = null
+                            completedLivePatungan = null
+                            activeSheetInitialMode = LiveDeliveryMode.PATUNGAN
+                            activeOrderSheetProduct = product
+                        }
                     },
                     onOpenCommentSheet = {
                         activeCommentSheetProduct = product
@@ -243,6 +285,7 @@ fun LiveTabScreen(
         ) {
             LiveExploreGridOverlay(
                 liveProducts = liveList,
+                patunganByProduct = patunganByProduct,
                 currentIndex = pagerState.currentPage,
                 onSelectIndex = { idx ->
                     showGridOverlay = false
@@ -277,7 +320,10 @@ fun LiveTabScreen(
                 onOpenDirectOrder = {
                     activeCommentSheetProduct = null
                     onInitCheckout(commentSheetProduct)
+                    onPreparePatungan(commentSheetProduct) {}
                     completedLiveOrder = null
+                    completedLivePatungan = null
+                    activeSheetInitialMode = LiveDeliveryMode.AMBIL_SENDIRI
                     activeOrderSheetProduct = commentSheetProduct
                 },
                 onClose = { activeCommentSheetProduct = null }
@@ -285,48 +331,88 @@ fun LiveTabScreen(
         }
     }
 
-    // TikTok Shop-style Instant Direct Order Bottom Sheet (Pesan Langsung di Dalam Live!)
+    // TikTok Shop-style Instant Direct Order Bottom Sheet (Ambil Sendiri / Patungan Gojek / Bayar Full!)
     val sheetProduct = activeOrderSheetProduct
     if (sheetProduct != null) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        val sheetPatunganGroup = patunganByProduct[sheetProduct.id]
         ModalBottomSheet(
             onDismissRequest = {
                 activeOrderSheetProduct = null
                 completedLiveOrder = null
+                completedLivePatungan = null
             },
             sheetState = sheetState,
             containerColor = BgWhite,
             shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
         ) {
             val doneOrder = completedLiveOrder
-            if (doneOrder == null) {
-                LiveDirectOrderSheetContent(
-                    product = sheetProduct,
-                    selectedSlot = uiState.selectedPickupSlot,
-                    selectedMethod = uiState.selectedPaymentMethod,
-                    walletBalanceRp = uiState.userPrefs.walletBalanceRp,
-                    onSelectSlot = onSelectSlot,
-                    onSelectMethod = onSelectPayment,
-                    onClose = { activeOrderSheetProduct = null },
-                    onConfirmPay = {
-                        onPlaceLiveOrder(sheetProduct) { created ->
-                            completedLiveOrder = created
+            val donePatungan = completedLivePatungan
+            when {
+                doneOrder != null -> {
+                    LiveOrderSuccessSheetContent(
+                        order = doneOrder,
+                        onViewOrders = {
+                            activeOrderSheetProduct = null
+                            completedLiveOrder = null
+                            onNavigateToOrders()
+                        },
+                        onContinueWatching = {
+                            activeOrderSheetProduct = null
+                            completedLiveOrder = null
                         }
-                    }
-                )
-            } else {
-                LiveOrderSuccessSheetContent(
-                    order = doneOrder,
-                    onViewOrders = {
-                        activeOrderSheetProduct = null
-                        completedLiveOrder = null
-                        onNavigateToOrders()
-                    },
-                    onContinueWatching = {
-                        activeOrderSheetProduct = null
-                        completedLiveOrder = null
-                    }
-                )
+                    )
+                }
+                donePatungan != null -> {
+                    LivePatunganSuccessSheetContent(
+                        group = donePatungan,
+                        onOpenPatunganStatus = {
+                            activeOrderSheetProduct = null
+                            completedLivePatungan = null
+                            onOpenPatunganGroup(donePatungan)
+                        },
+                        onContinueWatching = {
+                            activeOrderSheetProduct = null
+                            completedLivePatungan = null
+                        }
+                    )
+                }
+                else -> {
+                    LiveDirectOrderSheetContent(
+                        product = sheetProduct,
+                        patunganGroup = sheetPatunganGroup,
+                        initialMode = activeSheetInitialMode,
+                        selectedSlot = uiState.selectedPickupSlot,
+                        selectedMethod = uiState.selectedPaymentMethod,
+                        walletBalanceRp = uiState.userPrefs.walletBalanceRp,
+                        onSelectSlot = onSelectSlot,
+                        onSelectMethod = onSelectPayment,
+                        onClose = { activeOrderSheetProduct = null },
+                        onConfirmPayPickup = {
+                            onPlaceLiveOrder(sheetProduct) { created ->
+                                completedLiveOrder = created
+                            }
+                        },
+                        onConfirmPayPatungan = { groupId, areaDetail, addr, payOpt ->
+                            onJoinPatunganFromLive(sheetProduct, groupId, areaDetail, addr, payOpt) { updated ->
+                                if (updated != null) {
+                                    completedLivePatungan = updated
+                                }
+                            }
+                        },
+                        onConfirmPaySoloFull = { areaDetail, addr, payOpt ->
+                            onJoinSoloFullFromLive(sheetProduct, areaDetail, addr, payOpt) { created ->
+                                if (created != null) {
+                                    completedLivePatungan = created
+                                }
+                            }
+                        },
+                        onOpenJoinedPatunganStatus = { joinedGroup ->
+                            activeOrderSheetProduct = null
+                            onOpenPatunganGroup(joinedGroup)
+                        }
+                    )
+                }
             }
         }
     }
@@ -335,6 +421,7 @@ fun LiveTabScreen(
 @Composable
 private fun TikTokLiveStreamPage(
     product: ProductEntity,
+    patunganGroup: PatunganGroupEntity?,
     pageIndex: Int,
     totalPages: Int,
     comments: List<LiveComment>,
@@ -342,6 +429,7 @@ private fun TikTokLiveStreamPage(
     onToggleFavorite: () -> Unit,
     onOpenGrid: () -> Unit,
     onOpenDirectOrder: () -> Unit,
+    onOpenPatunganOrder: () -> Unit,
     onOpenCommentSheet: () -> Unit,
     onSendComment: (String) -> Unit
 ) {
@@ -768,7 +856,59 @@ private fun TikTokLiveStreamPage(
                         }
                     }
 
-                    // Pinned TikTok-Shop-Style Product Card (Bisa Pesan Langsung!)
+                    // Live Patungan Status Pill above Pinned Product Card
+                    val filledSlots = patunganGroup?.filledSlots ?: 3
+                    val maxPatunganSlots = patunganGroup?.maxSlots ?: 5
+                    val missingSlots = (maxPatunganSlots - filledSlots).coerceAtLeast(0)
+                    val patunganArea = patunganGroup?.areaName ?: resolvePatunganAreaForProduct(product).areaName
+                    val patunganUserJoined = patunganGroup?.userJoined == true
+                    val patunganFull = missingSlots <= 0 || (patunganGroup != null && patunganGroup.status != PatunganStatus.OPEN.name && !patunganUserJoined)
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (patunganFull && !patunganUserJoined) Color(0xE6374151) else ActionOrange.copy(alpha = 0.94f),
+                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable(enabled = !patunganFull || patunganUserJoined) { onOpenPatunganOrder() }
+                            .testTag("live_patungan_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.TwoWheeler,
+                                contentDescription = "Patungan Gojek Live",
+                                tint = Color.White,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = when {
+                                    patunganUserJoined && patunganGroup?.status == PatunganStatus.BERANGKAT.name ->
+                                        "Patungan $filledSlots/$maxPatunganSlots Siap Bungkus & Diantar ke Rumah!"
+                                    patunganUserJoined ->
+                                        "Kamu Ikut Patungan ($filledSlots/$maxPatunganSlots) • Kurang $missingSlots orang lagi, tunggu di rumah!"
+                                    patunganFull ->
+                                        "Patungan Gojek $filledSlots/$maxPatunganSlots Penuh • Ambil Sendiri Gratis"
+                                    else ->
+                                        "Patungan: $missingSlots orang lagi dr $maxPatunganSlots siap bungkus, tinggal menunggu di rumah!"
+                                },
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.ExtraBold
+                                ),
+                                color = Color.White,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    }
+
+                    // Pinned TikTok-Shop-Style Product Card (Bisa Ambil Sendiri / Patungan / Bayar Full!)
                     Surface(
                         shape = RoundedCornerShape(16.dp),
                         color = BgWhite.copy(alpha = 0.96f),
@@ -814,9 +954,11 @@ private fun TikTokLiveStreamPage(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "Sisa ${product.stock} Kantong • Ambil Sendiri",
-                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
-                                    color = FreshGreenDark
+                                    text = "Sisa ${product.stock} • Ambil Gratis / Patungan Rp3rb ($patunganArea)",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp),
+                                    color = FreshGreenDark,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
@@ -1570,27 +1712,54 @@ private fun FloatingHeartParticle(
 
 /**
  * In-Stream TikTok Shop Direct Order Bottom Sheet:
- * User memilih jam ambil + metode pembayaran (tanpa COD) langsung di atas Live video!
+ * User bisa memilih Ambil Sendiri (Gratis), Patungan Gojek (Rp3.000), atau Bayar Full (Rp15.000) langsung dari Live!
  */
 @Composable
 private fun LiveDirectOrderSheetContent(
     product: ProductEntity,
+    patunganGroup: PatunganGroupEntity?,
+    initialMode: LiveDeliveryMode,
     selectedSlot: String,
     selectedMethod: PaymentMethod,
     walletBalanceRp: Int,
     onSelectSlot: (String) -> Unit,
     onSelectMethod: (PaymentMethod) -> Unit,
     onClose: () -> Unit,
-    onConfirmPay: () -> Unit
+    onConfirmPayPickup: () -> Unit,
+    onConfirmPayPatungan: (groupId: String, areaDetail: String, addressLabel: String, payment: PatunganPaymentOption) -> Unit,
+    onConfirmPaySoloFull: (areaDetail: String, addressLabel: String, payment: PatunganPaymentOption) -> Unit,
+    onOpenJoinedPatunganStatus: (PatunganGroupEntity) -> Unit
 ) {
+    var mode by remember(product.id, initialMode) { mutableStateOf(initialMode) }
+    val area = remember(product.id, patunganGroup?.areaName) {
+        PatunganArea.entries.firstOrNull { it.areaName == patunganGroup?.areaName }
+            ?: resolvePatunganAreaForProduct(product)
+    }
+    var selectedSubZone by remember(area.areaName) {
+        mutableStateOf(area.subZones.firstOrNull() ?: area.areaName)
+    }
+    var patunganPayment by remember { mutableStateOf(PatunganPaymentOption.QRIS) }
+
+    val filled = patunganGroup?.filledSlots ?: 3
+    val maxSlots = patunganGroup?.maxSlots ?: 5
+    val remaining = (maxSlots - filled).coerceAtLeast(0)
+    val departHour = patunganGroup?.departHour ?: "19.30"
+    val userJoinedPatungan = patunganGroup?.userJoined == true
+    val patunganFull = remaining <= 0 || (patunganGroup != null && patunganGroup.status != PatunganStatus.OPEN.name && !userJoinedPatungan)
+
     val slots = product.pickupSlotsCsv
         .split(",")
         .map { it.trim() }
         .filter { it.isNotEmpty() }
         .ifEmpty { listOf("17.00-17.30", "17.30-18.00") }
 
-    val serviceFee = 1000
-    val totalPay = product.discountPrice + serviceFee
+    val serviceFee = if (mode == LiveDeliveryMode.AMBIL_SENDIRI) 1000 else 0
+    val shippingFee = when (mode) {
+        LiveDeliveryMode.AMBIL_SENDIRI -> 0
+        LiveDeliveryMode.PATUNGAN -> patunganGroup?.patunganShippingRp ?: 3000
+        LiveDeliveryMode.BAYAR_FULL -> patunganGroup?.normalShippingRp ?: 15000
+    }
+    val totalPay = product.discountPrice + serviceFee + shippingFee
     val liveMethods = listOf(
         PaymentMethod.QRIS,
         PaymentMethod.GOPAY,
@@ -1667,42 +1836,190 @@ private fun LiveDirectOrderSheetContent(
             }
         }
 
-        // Info Ambil Sendiri (No delivery, no ongkir)
-        PickupOnlyBanner(
-            title = "Ambil Sendiri - ${product.storeName} ${product.distanceText}",
-            subtitle = "${product.storeAddress} • Gratis tanpa ongkir, tidak ada COD"
-        )
-
-        // Pilih Jam Ambil
+        // 3 Pilihan Cara Ambil / Antar di Live
         Text(
-            text = "Pilih Jam Ambil",
-            style = MaterialTheme.typography.titleSmall,
+            text = "Pilih Pengiriman atau Ambil Sendiri",
+            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
             color = TextBlack
         )
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            slots.take(3).forEach { slot ->
-                val isSelected = selectedSlot == slot
+            listOf(
+                Triple(LiveDeliveryMode.AMBIL_SENDIRI, "Ambil Sendiri", "GRATIS"),
+                Triple(LiveDeliveryMode.PATUNGAN, "Patungan Gojek", if (patunganFull && !userJoinedPatungan) "Penuh" else "Rp3rb"),
+                Triple(LiveDeliveryMode.BAYAR_FULL, "Bayar Full", "Rp15rb")
+            ).forEach { (optionMode, label, sub) ->
+                val selected = mode == optionMode
+                val isDisabled = optionMode == LiveDeliveryMode.PATUNGAN && patunganFull && !userJoinedPatungan
                 Surface(
                     shape = RoundedCornerShape(14.dp),
-                    color = if (isSelected) ActionOrangeSoft else BgLightGray,
+                    color = when {
+                        isDisabled -> Color(0xFFE5E7EB)
+                        selected && optionMode == LiveDeliveryMode.AMBIL_SENDIRI -> FreshGreenSoft
+                        selected -> ActionOrangeSoft
+                        else -> BgLightGray
+                    },
                     border = BorderStroke(
-                        if (isSelected) 2.dp else 1.dp,
-                        if (isSelected) ActionOrange else SurfaceBorder
+                        if (selected) 2.dp else 1.dp,
+                        when {
+                            isDisabled -> SurfaceBorder
+                            selected && optionMode == LiveDeliveryMode.AMBIL_SENDIRI -> FreshGreen
+                            selected -> ActionOrange
+                            else -> SurfaceBorder
+                        }
                     ),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
+                        .heightIn(min = 56.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .clickable { onSelectSlot(slot) }
+                        .clickable(enabled = !isDisabled) { mode = optionMode }
+                        .testTag("live_mode_${optionMode.name.lowercase()}")
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Text(
-                            text = slot,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = if (isSelected) ActionOrangeDark else TextBlack
+                            text = label,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            ),
+                            color = if (isDisabled) TextGray else TextBlack,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = sub,
+                            style = MaterialTheme.typography.labelSmall.copy(
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            ),
+                            color = when {
+                                isDisabled -> TextGray
+                                optionMode == LiveDeliveryMode.AMBIL_SENDIRI -> FreshGreenDark
+                                else -> ActionOrangeDark
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (mode == LiveDeliveryMode.AMBIL_SENDIRI) {
+            PickupOnlyBanner(
+                title = "Ambil Sendiri - ${product.storeName} ${product.distanceText}",
+                subtitle = "${product.storeAddress} • Gratis tanpa ongkir, tidak ada COD"
+            )
+
+            Text(
+                text = "Pilih Jam Ambil",
+                style = MaterialTheme.typography.titleSmall,
+                color = TextBlack
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                slots.take(3).forEach { slot ->
+                    val isSelected = selectedSlot == slot
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSelected) ActionOrangeSoft else BgLightGray,
+                        border = BorderStroke(
+                            if (isSelected) 2.dp else 1.dp,
+                            if (isSelected) ActionOrange else SurfaceBorder
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .clickable { onSelectSlot(slot) }
+                    ) {
+                        Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 6.dp)) {
+                            Text(
+                                text = slot,
+                                style = MaterialTheme.typography.labelMedium,
+                                color = if (isSelected) ActionOrangeDark else TextBlack
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Live Patungan / Bayar Full info card
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = ActionOrangeSoft,
+                border = BorderStroke(1.dp, ActionOrangeBorder),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.TwoWheeler, contentDescription = null, tint = ActionOrangeDark, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = if (mode == LiveDeliveryMode.PATUNGAN) {
+                                "$remaining orang lagi dr $maxSlots siap bungkus! Tinggal menunggu di rumah"
+                            } else {
+                                "Antar Langsung Gojek (Bayar Full Ongkir) ke Komplek ${area.areaName}"
+                            },
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
+                            color = ActionOrangeDark
+                        )
+                    }
+                    if (mode == LiveDeliveryMode.PATUNGAN) {
+                        LinearProgressIndicator(
+                            progress = { (filled.toFloat() / maxSlots.toFloat()).coerceIn(0f, 1f) },
+                            color = FreshGreen,
+                            trackColor = Color.White,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(50))
+                        )
+                        Text(
+                            text = "$filled/$maxSlots sudah ikut • Berangkat jam $departHour • Area ${area.areaName} (radius 1km)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextGray
+                        )
+                    } else {
+                        Text(
+                            text = "Driver langsung menuju ${product.storeName} & mengantar ke rumahmu tanpa menunggu kuota.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextGray
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = "Pilih Area Antar (${area.areaName})",
+                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                color = TextBlack
+            )
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(area.subZones) { zone ->
+                    val chosen = selectedSubZone == zone
+                    Surface(
+                        shape = RoundedCornerShape(50),
+                        color = if (chosen) FreshGreenSoft else BgLightGray,
+                        border = BorderStroke(1.dp, if (chosen) FreshGreen else SurfaceBorder),
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50))
+                            .clickable { selectedSubZone = zone }
+                    ) {
+                        Text(
+                            text = zone,
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (chosen) FreshGreenDark else TextBlack,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         )
                     }
                 }
@@ -1715,48 +2032,97 @@ private fun LiveDirectOrderSheetContent(
             style = MaterialTheme.typography.titleSmall,
             color = TextBlack
         )
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            liveMethods.forEach { method ->
-                val isSelected = selectedMethod == method
-                val sub = if (method == PaymentMethod.SALDO_SISA_ENAK) {
-                    "Saldo ${formatRupiah(walletBalanceRp)}"
-                } else {
-                    method.subtitle
-                }
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isSelected) ActionOrangeSoft else BgLightGray,
-                    border = BorderStroke(
-                        if (isSelected) 2.dp else 1.dp,
-                        if (isSelected) ActionOrange else SurfaceBorder
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .clickable { onSelectMethod(method) }
-                ) {
-                    Row(
+        if (mode == LiveDeliveryMode.AMBIL_SENDIRI) {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                liveMethods.forEach { method ->
+                    val isSelected = selectedMethod == method
+                    val sub = if (method == PaymentMethod.SALDO_SISA_ENAK) {
+                        "Saldo ${formatRupiah(walletBalanceRp)}"
+                    } else {
+                        method.subtitle
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) ActionOrangeSoft else BgLightGray,
+                        border = BorderStroke(
+                            if (isSelected) 2.dp else 1.dp,
+                            if (isSelected) ActionOrange else SurfaceBorder
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectMethod(method) }
                     ) {
-                        Icon(
-                            imageVector = Icons.Filled.Payments,
-                            contentDescription = null,
-                            tint = if (isSelected) ActionOrange else FreshGreenDark,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(method.label, style = MaterialTheme.typography.labelLarge, color = TextBlack)
-                            Text(sub, style = MaterialTheme.typography.bodySmall, color = TextGray)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Payments,
+                                contentDescription = null,
+                                tint = if (isSelected) ActionOrange else FreshGreenDark,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(method.label, style = MaterialTheme.typography.labelLarge, color = TextBlack)
+                                Text(sub, style = MaterialTheme.typography.bodySmall, color = TextGray)
+                            }
+                            Icon(
+                                imageVector = if (isSelected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (isSelected) ActionOrange else TextGray
+                            )
                         }
-                        Icon(
-                            imageVector = if (isSelected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
-                            contentDescription = null,
-                            tint = if (isSelected) ActionOrange else TextGray
-                        )
+                    }
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                PatunganPaymentOption.entries.forEach { option ->
+                    val isSelected = patunganPayment == option
+                    val sub = if (option == PatunganPaymentOption.SALDO_LUDES) {
+                        "Saldo ${formatRupiah(walletBalanceRp)}"
+                    } else {
+                        option.subtitle
+                    }
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) ActionOrangeSoft else BgLightGray,
+                        border = BorderStroke(
+                            if (isSelected) 2.dp else 1.dp,
+                            if (isSelected) ActionOrange else SurfaceBorder
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { patunganPayment = option }
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Payments,
+                                contentDescription = null,
+                                tint = if (isSelected) ActionOrange else FreshGreenDark,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(option.label, style = MaterialTheme.typography.labelLarge, color = TextBlack)
+                                Text(sub, style = MaterialTheme.typography.bodySmall, color = TextGray)
+                            }
+                            Icon(
+                                imageVector = if (isSelected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
+                                contentDescription = null,
+                                tint = if (isSelected) ActionOrange else TextGray
+                            )
+                        }
                     }
                 }
             }
@@ -1774,9 +2140,20 @@ private fun LiveDirectOrderSheetContent(
                     Text("Kantong", style = MaterialTheme.typography.bodyMedium, color = TextBlack)
                     Text(formatRupiah(product.discountPrice), style = MaterialTheme.typography.bodyMedium, color = TextBlack)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("Biaya Layanan", style = MaterialTheme.typography.bodyMedium, color = TextBlack)
-                    Text(formatRupiah(serviceFee), style = MaterialTheme.typography.bodyMedium, color = TextBlack)
+                if (mode == LiveDeliveryMode.AMBIL_SENDIRI) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Biaya Layanan", style = MaterialTheme.typography.bodyMedium, color = TextBlack)
+                        Text(formatRupiah(serviceFee), style = MaterialTheme.typography.bodyMedium, color = TextBlack)
+                    }
+                } else {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(
+                            text = if (mode == LiveDeliveryMode.PATUNGAN) "Ongkir Patungan (Bagi 5)" else "Ongkir Gojek Full",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextBlack
+                        )
+                        Text(formatRupiah(shippingFee), style = MaterialTheme.typography.bodyMedium, color = FreshGreenDark)
+                    }
                 }
                 HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp), color = FreshGreenBorder)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -1790,13 +2167,138 @@ private fun LiveDirectOrderSheetContent(
             }
         }
 
+        if (mode == LiveDeliveryMode.PATUNGAN && userJoinedPatungan && patunganGroup != null) {
+            SecondaryGreenButton(
+                text = "LIHAT STATUS PATUNGAN ($filled/$maxSlots)",
+                onClick = { onOpenJoinedPatunganStatus(patunganGroup) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        } else {
+            val canPay = product.stock > 0 && when (mode) {
+                LiveDeliveryMode.AMBIL_SENDIRI -> selectedSlot.isNotBlank()
+                LiveDeliveryMode.PATUNGAN -> !patunganFull && (patunganPayment != PatunganPaymentOption.SALDO_LUDES || walletBalanceRp >= totalPay)
+                LiveDeliveryMode.BAYAR_FULL -> patunganPayment != PatunganPaymentOption.SALDO_LUDES || walletBalanceRp >= totalPay
+            }
+            PrimaryOrangeButton(
+                text = when (mode) {
+                    LiveDeliveryMode.PATUNGAN -> "IKUT PATUNGAN • BAYAR ${formatRupiah(totalPay)}"
+                    LiveDeliveryMode.BAYAR_FULL -> "BAYAR FULL • ${formatRupiah(totalPay)}"
+                    LiveDeliveryMode.AMBIL_SENDIRI -> "BAYAR ${formatRupiah(totalPay)} SEKARANG"
+                },
+                enabled = canPay,
+                onClick = {
+                    when (mode) {
+                        LiveDeliveryMode.AMBIL_SENDIRI -> onConfirmPayPickup()
+                        LiveDeliveryMode.PATUNGAN -> onConfirmPayPatungan(
+                            patunganGroup?.id ?: "patungan_${product.id}",
+                            selectedSubZone,
+                            "$selectedSubZone No. 15",
+                            patunganPayment
+                        )
+                        LiveDeliveryMode.BAYAR_FULL -> onConfirmPaySoloFull(
+                            selectedSubZone,
+                            "$selectedSubZone No. 15",
+                            patunganPayment
+                        )
+                    }
+                },
+                testTag = "live_sheet_pay_button",
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+    }
+}
+
+/**
+ * In-Stream Patungan / Solo Delivery Confirmation Sheet inside Live
+ */
+@Composable
+private fun LivePatunganSuccessSheetContent(
+    group: PatunganGroupEntity,
+    onOpenPatunganStatus: () -> Unit,
+    onContinueWatching: () -> Unit
+) {
+    val filled = group.filledSlots
+    val maxSlots = group.maxSlots
+    val remaining = (maxSlots - filled).coerceAtLeast(0)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp)
+            .padding(bottom = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = FreshGreen,
+            modifier = Modifier.size(58.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = Icons.Filled.TwoWheeler,
+                    contentDescription = "Berhasil",
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+        }
+
+        Text(
+            text = if (group.isSoloFallbackDelivery || group.status == PatunganStatus.BERANGKAT.name) {
+                "Siap Bungkus! Driver Segera Berangkat!"
+            } else {
+                "Kamu Ikut Patungan ($filled/$maxSlots)!"
+            },
+            style = MaterialTheme.typography.headlineSmall.copy(fontSize = 19.sp),
+            color = TextBlack
+        )
+
+        Text(
+            text = if (group.isSoloFallbackDelivery || group.status == PatunganStatus.BERANGKAT.name) {
+                "Kamu tinggal menunggu di rumah di area ${group.areaName}, driver sedang memproses kantongmu!"
+            } else {
+                "Tinggal $remaining orang lagi dari $maxSlots siap bungkus! Kamu tinggal menunggu di rumah di area ${group.areaName}."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = TextGray
+        )
+
+        Surface(
+            shape = RoundedCornerShape(14.dp),
+            color = ActionOrangeSoft,
+            border = BorderStroke(1.dp, ActionOrangeBorder),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    text = "${group.storeName} • ${group.productTitle}",
+                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                    color = TextBlack
+                )
+                Text(
+                    text = "Dana ${formatRupiah(group.userTotalPaidRp)} ditahan aman di LUDES • Berangkat jam ${group.departHour}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = ActionOrangeDark
+                )
+            }
+        }
+
         PrimaryOrangeButton(
-            text = "BAYAR ${formatRupiah(totalPay)} SEKARANG",
-            enabled = selectedSlot.isNotBlank() && product.stock > 0,
-            onClick = onConfirmPay,
-            testTag = "live_sheet_pay_button",
+            text = "Lihat Progres & Peta Driver",
+            onClick = onOpenPatunganStatus,
             modifier = Modifier.fillMaxWidth()
         )
+
+        Button(
+            onClick = onContinueWatching,
+            colors = ButtonDefaults.textButtonColors(contentColor = TextGray),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Lanjut Nonton Live")
+        }
     }
 }
 
@@ -1917,6 +2419,7 @@ private fun LiveOrderSuccessSheetContent(
 @Composable
 private fun LiveExploreGridOverlay(
     liveProducts: List<ProductEntity>,
+    patunganByProduct: Map<String, PatunganGroupEntity>,
     currentIndex: Int,
     onSelectIndex: (Int) -> Unit,
     onClose: () -> Unit
@@ -1964,6 +2467,10 @@ private fun LiveExploreGridOverlay(
             ) {
                 itemsIndexed(liveProducts) { idx, product ->
                     val isCurrent = idx == currentIndex
+                    val pg = patunganByProduct[product.id]
+                    val filled = pg?.filledSlots ?: 3
+                    val maxSlots = pg?.maxSlots ?: 5
+                    val rem = (maxSlots - filled).coerceAtLeast(0)
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         border = if (isCurrent) BorderStroke(2.dp, ActionOrange) else null,
@@ -2018,8 +2525,8 @@ private fun LiveExploreGridOverlay(
                             ) {
                                 Surface(shape = RoundedCornerShape(50), color = ActionOrange) {
                                     Text(
-                                        text = "Sisa ${product.stock} • ${formatRupiah(product.discountPrice)}",
-                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 10.sp),
+                                        text = if (rem > 0) "Patungan: $rem dr $maxSlots siap bungkus" else "Sisa ${product.stock} • ${formatRupiah(product.discountPrice)}",
+                                        style = MaterialTheme.typography.labelMedium.copy(fontSize = 9.sp),
                                         color = Color.White,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
                                     )
@@ -2033,7 +2540,7 @@ private fun LiveExploreGridOverlay(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "${product.distanceText} • Ambil Sendiri",
+                                    text = "${product.distanceText} • ${formatRupiah(product.discountPrice)}",
                                     style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
                                     color = Color.White.copy(alpha = 0.85f)
                                 )

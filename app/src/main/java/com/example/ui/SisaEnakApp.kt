@@ -56,11 +56,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.example.data.OrderStatus
+import com.example.data.PatunganGroupEntity
+import com.example.data.PatunganStatus
 import com.example.ui.components.MainTab
 import com.example.ui.components.SisaEnakBottomBar
 import com.example.ui.components.SisaEnakTopHeader
 import com.example.ui.screens.AccountTabScreen
 import com.example.ui.screens.CheckoutPickupScreen
+import com.example.ui.screens.DriverPatunganScreen
 import com.example.ui.screens.FavoritesScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.LanguageSettingsScreen
@@ -76,6 +79,10 @@ import com.example.ui.screens.OrderPickupStatusScreen
 import com.example.ui.screens.OrderRatingScreen
 import com.example.ui.screens.OrderSuccessScreen
 import com.example.ui.screens.OrdersTabScreen
+import com.example.ui.screens.PatunganCheckoutScreen
+import com.example.ui.screens.PatunganDriverStatusScreen
+import com.example.ui.screens.PatunganFailedScreen
+import com.example.ui.screens.PatunganWaitingScreen
 import com.example.ui.screens.PaymentScreen
 import com.example.ui.screens.PrivacyPolicyScreen
 import com.example.ui.screens.ProductDetailScreen
@@ -130,6 +137,12 @@ private object Routes {
     const val NOTIFICATIONS = "notifications"
     const val LOCATION_PICKER = "location_picker"
 
+    const val PATUNGAN_CHECKOUT = "patungan_checkout/{productId}?soloFull={soloFull}"
+    const val PATUNGAN_WAITING = "patungan_waiting/{groupId}"
+    const val PATUNGAN_STATUS = "patungan_status/{groupId}"
+    const val PATUNGAN_FAILED = "patungan_failed/{groupId}"
+    const val DRIVER_PATUNGAN = "driver_patungan"
+
     fun productDetail(id: String) = "product_detail/${Uri.encode(id)}"
     fun checkout(id: String) = "checkout/${Uri.encode(id)}"
     fun payment(id: String) = "payment/${Uri.encode(id)}"
@@ -139,6 +152,12 @@ private object Routes {
     fun orderPickup(id: String) = "order_pickup/${Uri.encode(id)}"
     fun orderCompleted(id: String) = "order_completed/${Uri.encode(id)}"
     fun orderRating(id: String) = "order_rating/${Uri.encode(id)}"
+
+    fun patunganCheckout(productId: String, soloFull: Boolean = false) =
+        "patungan_checkout/${Uri.encode(productId)}?soloFull=$soloFull"
+    fun patunganWaiting(groupId: String) = "patungan_waiting/${Uri.encode(groupId)}"
+    fun patunganStatus(groupId: String) = "patungan_status/${Uri.encode(groupId)}"
+    fun patunganFailed(groupId: String) = "patungan_failed/${Uri.encode(groupId)}"
 }
 
 @Composable
@@ -164,7 +183,12 @@ fun SisaEnakApp(
     val currentRoute = navBackStackEntry?.destination?.route ?: Routes.BERANDA
     val isMainTab = currentRoute in listOf(Routes.BERANDA, Routes.PESANAN, Routes.LIVE, Routes.AKUN)
     val showTopHeader = currentRoute == Routes.BERANDA
-    val activeOrderCount = uiState.orders.count { it.status == OrderStatus.BELUM_DIAMBIL.name }
+    val activeOrderCount = uiState.orders.count { it.status == OrderStatus.BELUM_DIAMBIL.name } +
+        uiState.patunganGroups.count {
+            it.userJoined && (it.status == PatunganStatus.OPEN.name ||
+                it.status == PatunganStatus.BERANGKAT.name ||
+                it.status == PatunganStatus.GAGAL_PENUH.name)
+        }
     val view = LocalView.current
 
     if (!view.isInEditMode) {
@@ -184,6 +208,20 @@ fun SisaEnakApp(
             }
             launchSingleTop = true
             restoreState = true
+        }
+    }
+
+    fun navigateToPatunganGroup(group: PatunganGroupEntity, popBackToHome: Boolean = false) {
+        val targetRoute = when (group.status) {
+            PatunganStatus.BERANGKAT.name,
+            PatunganStatus.SELESAI.name -> Routes.patunganStatus(group.id)
+            PatunganStatus.GAGAL_PENUH.name -> Routes.patunganFailed(group.id)
+            else -> Routes.patunganWaiting(group.id)
+        }
+        navController.navigate(targetRoute) {
+            if (popBackToHome) {
+                popUpTo(Routes.BERANDA)
+            }
         }
     }
 
@@ -363,11 +401,14 @@ fun SisaEnakApp(
                         onOpenRating = { order ->
                             navController.navigate(Routes.orderRating(order.id))
                         },
+                        onOpenPatunganGroup = { group ->
+                            navigateToPatunganGroup(group)
+                        },
                         onExploreHome = { switchTab(MainTab.BERANDA) }
                     )
                 }
 
-                // 3. TAB LIVE (posisi ke-3, UI/UX persis TikTok Live)
+                // 3. TAB LIVE (posisi ke-3, UI/UX persis TikTok Live + info Patungan)
                 composable(Routes.LIVE) {
                     LiveTabScreen(
                         uiState = uiState,
@@ -377,6 +418,18 @@ fun SisaEnakApp(
                         onSelectPayment = { viewModel.selectPaymentMethod(it) },
                         onPlaceLiveOrder = { product, onCreated ->
                             viewModel.placeOrder(product, fromLive = true, onOrderCreated = onCreated)
+                        },
+                        onPreparePatungan = { product, cb ->
+                            viewModel.preparePatunganForProduct(product, cb)
+                        },
+                        onJoinPatunganFromLive = { product, groupId, areaDetail, addr, payOpt, cb ->
+                            viewModel.joinPatungan(product, groupId, areaDetail, addr, payOpt, cb)
+                        },
+                        onJoinSoloFullFromLive = { product, areaDetail, addr, payOpt, cb ->
+                            viewModel.joinSoloFullDelivery(product, areaDetail, addr, payOpt, cb)
+                        },
+                        onOpenPatunganGroup = { group ->
+                            navigateToPatunganGroup(group)
                         },
                         onSendComment = { text, productId -> viewModel.sendLiveComment(text, productId) },
                         onNavigateToOrders = { switchTab(MainTab.PESANAN) }
@@ -405,15 +458,52 @@ fun SisaEnakApp(
                 ) { backStack ->
                     val productId = Uri.decode(backStack.arguments?.getString("productId").orEmpty())
                     val product = uiState.products.find { it.id == productId }
+                    val patunganGroup = uiState.patunganGroups.find {
+                        it.productId == productId && !it.isSoloFallbackDelivery
+                    }
+                    LaunchedEffect(productId, patunganGroup == null) {
+                        if (product != null && patunganGroup == null) {
+                            viewModel.preparePatunganForProduct(product) {}
+                        }
+                    }
                     if (product != null) {
                         ProductDetailScreen(
                             product = product,
                             reviews = uiState.productReviews.filter { it.productId == product.id },
+                            patunganGroup = patunganGroup,
                             onBack = { navController.popBackStack() },
                             onToggleFavorite = { viewModel.toggleProductFavorite(product.id) },
                             onBuyNow = {
                                 viewModel.initCheckoutForProduct(product)
                                 navController.navigate(Routes.checkout(product.id))
+                            },
+                            onOpenPatungan = {
+                                viewModel.preparePatunganForProduct(product) { group ->
+                                    when {
+                                        group.status == PatunganStatus.BERANGKAT.name ||
+                                            group.status == PatunganStatus.SELESAI.name -> {
+                                            navController.navigate(Routes.patunganStatus(group.id))
+                                        }
+                                        group.status == PatunganStatus.GAGAL_PENUH.name -> {
+                                            navController.navigate(Routes.patunganFailed(group.id))
+                                        }
+                                        group.userJoined -> {
+                                            navController.navigate(Routes.patunganWaiting(group.id))
+                                        }
+                                        else -> {
+                                            navController.navigate(
+                                                Routes.patunganCheckout(product.id, soloFull = false)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            onOpenSoloFullDelivery = {
+                                viewModel.preparePatunganForProduct(product) {
+                                    navController.navigate(
+                                        Routes.patunganCheckout(product.id, soloFull = true)
+                                    )
+                                }
                             }
                         )
                     }
@@ -710,6 +800,172 @@ fun SisaEnakApp(
                         },
                         onViewOrders = { switchTab(MainTab.PESANAN) },
                         onShowMessage = { viewModel.showMessage(it) }
+                    )
+                }
+
+                // FITUR PATUNGAN GOJEK (Layar Checkout -> Waiting -> Status Driver / Gagal Penuh -> Mode Driver)
+                composable(
+                    route = Routes.PATUNGAN_CHECKOUT,
+                    arguments = listOf(
+                        navArgument("productId") { type = NavType.StringType },
+                        navArgument("soloFull") {
+                            type = NavType.BoolType
+                            defaultValue = false
+                        }
+                    )
+                ) { backStack ->
+                    val productId = Uri.decode(backStack.arguments?.getString("productId").orEmpty())
+                    val isSoloFull = backStack.arguments?.getBoolean("soloFull") ?: false
+                    val product = uiState.products.find { it.id == productId }
+                    val group = uiState.patunganGroups.find {
+                        it.productId == productId && !it.isSoloFallbackDelivery
+                    }
+                    LaunchedEffect(productId, group == null) {
+                        if (product != null && group == null) {
+                            viewModel.preparePatunganForProduct(product) {}
+                        }
+                    }
+                    if (product != null && group != null) {
+                        PatunganCheckoutScreen(
+                            product = product,
+                            group = group,
+                            uiState = uiState,
+                            isSoloFullMode = isSoloFull,
+                            onBack = { navController.popBackStack() },
+                            onSwitchUserLocationToArea = { area ->
+                                viewModel.updateLocation("${area.areaName}, Bandung", area.lat, area.lng)
+                            },
+                            onPayPatungan = { areaDetail, addressLabel, paymentOption ->
+                                if (isSoloFull) {
+                                    viewModel.joinSoloFullDelivery(
+                                        product = product,
+                                        userAreaDetail = areaDetail,
+                                        userAddressLabel = addressLabel,
+                                        paymentOption = paymentOption
+                                    ) { updated ->
+                                        if (updated != null) {
+                                            navigateToPatunganGroup(updated, popBackToHome = true)
+                                        }
+                                    }
+                                } else {
+                                    viewModel.joinPatungan(
+                                        product = product,
+                                        groupId = group.id,
+                                        userAreaDetail = areaDetail,
+                                        userAddressLabel = addressLabel,
+                                        paymentOption = paymentOption
+                                    ) { updated ->
+                                        if (updated != null) {
+                                            navigateToPatunganGroup(updated, popBackToHome = true)
+                                        }
+                                    }
+                                }
+                            }
+                        )
+                    }
+                }
+
+                composable(
+                    route = Routes.PATUNGAN_WAITING,
+                    arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+                ) { backStack ->
+                    val groupId = Uri.decode(backStack.arguments?.getString("groupId").orEmpty())
+                    val group = uiState.patunganGroups.find { it.id == groupId }
+                    if (group != null) {
+                        PatunganWaitingScreen(
+                            group = group,
+                            onBack = { navController.popBackStack() },
+                            onShareSuccess = { msg -> viewModel.showMessage(msg) },
+                            onCancelPatungan = {
+                                viewModel.cancelPatungan(group.id) {
+                                    navController.popBackStack(Routes.BERANDA, inclusive = false)
+                                }
+                            },
+                            onSimulateNeighborJoin = {
+                                viewModel.simulateNeighborJoin(group.id) {
+                                    navController.navigate(Routes.patunganStatus(group.id)) {
+                                        popUpTo(Routes.BERANDA)
+                                    }
+                                }
+                            },
+                            onSimulateCutoff = { forceFail ->
+                                viewModel.simulatePatunganCutoff(
+                                    groupId = group.id,
+                                    forceFailUnderMin = forceFail,
+                                    onDeparted = {
+                                        navController.navigate(Routes.patunganStatus(group.id)) {
+                                            popUpTo(Routes.BERANDA)
+                                        }
+                                    },
+                                    onFailed = {
+                                        navController.navigate(Routes.patunganFailed(group.id)) {
+                                            popUpTo(Routes.BERANDA)
+                                        }
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+
+                composable(
+                    route = Routes.PATUNGAN_STATUS,
+                    arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+                ) { backStack ->
+                    val groupId = Uri.decode(backStack.arguments?.getString("groupId").orEmpty())
+                    val group = uiState.patunganGroups.find { it.id == groupId }
+                    if (group != null) {
+                        PatunganDriverStatusScreen(
+                            group = group,
+                            onBack = { navController.popBackStack() },
+                            onAdvanceStage = { viewModel.advanceDriverStage(group.id) },
+                            onOpenDriverScreen = { navController.navigate(Routes.DRIVER_PATUNGAN) },
+                            onShowMessage = { msg -> viewModel.showMessage(msg) }
+                        )
+                    }
+                }
+
+                composable(
+                    route = Routes.PATUNGAN_FAILED,
+                    arguments = listOf(navArgument("groupId") { type = NavType.StringType })
+                ) { backStack ->
+                    val groupId = Uri.decode(backStack.arguments?.getString("groupId").orEmpty())
+                    val group = uiState.patunganGroups.find { it.id == groupId }
+                    if (group != null) {
+                        PatunganFailedScreen(
+                            group = group,
+                            onBack = { navController.popBackStack() },
+                            onKeepSoloDelivery = {
+                                viewModel.resolveFailedKeepSoloDelivery(group.id) {
+                                    navController.navigate(Routes.patunganStatus(group.id)) {
+                                        popUpTo(Routes.BERANDA)
+                                    }
+                                }
+                            },
+                            onSwitchToPickup = {
+                                viewModel.resolveFailedSwitchToPickup(group.id) { order ->
+                                    navController.navigate(Routes.orderDetail(order.id)) {
+                                        popUpTo(Routes.BERANDA)
+                                    }
+                                }
+                            },
+                            onCancelAll = {
+                                viewModel.resolveFailedCancelAll(group.id) {
+                                    navController.popBackStack(Routes.BERANDA, inclusive = false)
+                                }
+                            }
+                        )
+                    }
+                }
+
+                composable(Routes.DRIVER_PATUNGAN) {
+                    DriverPatunganScreen(
+                        groups = uiState.patunganGroups,
+                        onBack = { navController.popBackStack() },
+                        onMarkPickedUpAtStore = { gId -> viewModel.driverMarkPickedUpAtStore(gId) },
+                        onMarkMemberDelivered = { gId, slotIndex ->
+                            viewModel.driverMarkMemberDelivered(gId, slotIndex)
+                        }
                     )
                 }
             }
