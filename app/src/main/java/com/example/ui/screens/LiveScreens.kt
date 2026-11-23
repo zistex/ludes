@@ -1743,7 +1743,6 @@ private fun LiveDirectOrderSheetContent(
     val filled = patunganGroup?.filledSlots ?: 3
     val maxSlots = patunganGroup?.maxSlots ?: 5
     val remaining = (maxSlots - filled).coerceAtLeast(0)
-    val departHour = patunganGroup?.departHour ?: "19.30"
     val userJoinedPatungan = patunganGroup?.userJoined == true
     val patunganFull = remaining <= 0 || (patunganGroup != null && patunganGroup.status != PatunganStatus.OPEN.name && !userJoinedPatungan)
 
@@ -1985,7 +1984,7 @@ private fun LiveDirectOrderSheetContent(
                                 .clip(RoundedCornerShape(50))
                         )
                         Text(
-                            text = "$filled/$maxSlots sudah ikut • Berangkat jam $departHour • Area ${area.areaName} (radius 1km)",
+                            text = "$filled/$maxSlots sudah ikut • Sisa $remaining orang lagi • Area ${area.areaName}",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextGray
                         )
@@ -2248,7 +2247,7 @@ private fun LivePatunganSuccessSheetContent(
 
         Text(
             text = if (group.isSoloFallbackDelivery || group.status == PatunganStatus.BERANGKAT.name) {
-                "Siap Bungkus! Driver Segera Berangkat!"
+                "Siap Bungkus! Pesananmu Diproses"
             } else {
                 "Kamu Ikut Patungan ($filled/$maxSlots)!"
             },
@@ -2258,7 +2257,7 @@ private fun LivePatunganSuccessSheetContent(
 
         Text(
             text = if (group.isSoloFallbackDelivery || group.status == PatunganStatus.BERANGKAT.name) {
-                "Kamu tinggal menunggu di rumah di area ${group.areaName}, driver sedang memproses kantongmu!"
+                "Kamu tinggal menunggu di rumah di area ${group.areaName}, pesananmu sedang disiapkan."
             } else {
                 "Tinggal $remaining orang lagi dari $maxSlots siap bungkus! Kamu tinggal menunggu di rumah di area ${group.areaName}."
             },
@@ -2279,7 +2278,11 @@ private fun LivePatunganSuccessSheetContent(
                     color = TextBlack
                 )
                 Text(
-                    text = "Dana ${formatRupiah(group.userTotalPaidRp)} ditahan aman di LUDES • Berangkat jam ${group.departHour}",
+                    text = if (group.isSoloFallbackDelivery) {
+                        "Dana ${formatRupiah(group.userTotalPaidRp)} ditahan aman di LUDES • Area ${group.areaName}"
+                    } else {
+                        "Sisa $remaining orang lagi • Dana ${formatRupiah(group.userTotalPaidRp)} ditahan aman di LUDES"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = ActionOrangeDark
                 )
@@ -2287,7 +2290,7 @@ private fun LivePatunganSuccessSheetContent(
         }
 
         PrimaryOrangeButton(
-            text = "Lihat Progres & Peta Driver",
+            text = "Lihat Detail Patungan",
             onClick = onOpenPatunganStatus,
             modifier = Modifier.fillMaxWidth()
         )

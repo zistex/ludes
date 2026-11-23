@@ -235,9 +235,9 @@ fun PatunganCheckoutScreen(
                                 color = TextBlack
                             )
                             Text(
-                                text = "Jam Ambil: ${group.pickupSlot} • Berangkat ${group.departHour} WIB",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextGray
+                                text = "Area ${group.areaName} • Sisa ${group.remainingSlots} orang lagi",
+                                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = ActionOrangeDark
                             )
                         }
                     }
@@ -379,14 +379,14 @@ fun PatunganCheckoutScreen(
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text(
-                                        text = "Info Patungan (5 Slot)",
+                                        text = "Detail Patungan • Sisa ${group.remainingSlots} Orang Lagi",
                                         style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                                         color = TextBlack
                                     )
                                 }
                                 Surface(shape = RoundedCornerShape(50), color = ActionOrangeSoft) {
                                     Text(
-                                        text = "Area ${group.areaName}",
+                                        text = "${group.filledSlots}/${group.maxSlots} Ikut",
                                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                         color = ActionOrangeDark,
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -572,7 +572,7 @@ fun PatunganCheckoutScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Patungan hanya untuk 1 toko, 1 jam ambil, 1 area radius 1km. Minimal 3 orang agar berangkat.",
+                                    text = "Patungan hanya untuk 1 toko & 1 area (${group.areaName}, radius max 1km), maksimal ${group.maxSlots} orang.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = TextGray
                                 )
@@ -695,16 +695,14 @@ fun PatunganCheckoutScreen(
 }
 
 /**
- * Layar 3: Menunggu Teman Patungan
+ * Layar 3: Detail Patungan & Sisa Slot Peserta (tanpa pengaturan berangkat)
  */
 @Composable
 fun PatunganWaitingScreen(
     group: PatunganGroupEntity,
     onBack: () -> Unit,
     onShareSuccess: (String) -> Unit,
-    onCancelPatungan: () -> Unit,
-    onSimulateNeighborJoin: () -> Unit,
-    onSimulateCutoff: (forceFail: Boolean) -> Unit
+    onCancelPatungan: () -> Unit
 ) {
     val context = LocalContext.current
     val filled = group.filledSlots
@@ -716,7 +714,7 @@ fun PatunganWaitingScreen(
         containerColor = BgLightGray,
         topBar = {
             SubScreenTopBar(
-                title = "Menunggu Teman Patungan",
+                title = "Detail Patungan",
                 onBack = onBack
             )
         }
@@ -733,7 +731,7 @@ fun PatunganWaitingScreen(
                 modifier = Modifier.widthIn(max = 600.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Hero Progress Card
+                // Hero Progress Card - Sisa Berapa Orang Lagi
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = BgWhite,
@@ -751,33 +749,27 @@ fun PatunganWaitingScreen(
                         ) {
                             Surface(shape = RoundedCornerShape(50), color = ActionOrangeSoft) {
                                 Text(
-                                    text = if (missing > 0) "Menunggu $missing orang lagi" else "Siap berangkat!",
+                                    text = if (missing > 0) "Sisa $missing orang lagi" else "Kuota Penuh",
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
                                     color = ActionOrangeDark,
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    imageVector = Icons.Filled.AccessTime,
-                                    contentDescription = null,
-                                    tint = LiveRed,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(4.dp))
+                            Surface(shape = RoundedCornerShape(50), color = FreshGreenSoft) {
                                 Text(
-                                    text = "Patungan ditutup Jam ${group.cutoffHour}",
+                                    text = "Area ${group.areaName}",
                                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = LiveRed
+                                    color = FreshGreenDark,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                 )
                             }
                         }
 
                         Text(
                             text = if (missing > 0) {
-                                "Kurang $missing lagi biar berangkat!"
+                                "Sisa $missing orang lagi dari $maxSlots slot!"
                             } else {
-                                "Kuota 5/5 terpenuhi!"
+                                "Kuota $filled/$maxSlots terpenuhi!"
                             },
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
                             color = TextBlack
@@ -793,21 +785,11 @@ fun PatunganWaitingScreen(
                                 .clip(RoundedCornerShape(50))
                         )
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text(
-                                text = "$filled/$maxSlots orang sudah bergabung",
-                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                color = FreshGreenDark
-                            )
-                            Text(
-                                text = "Min. ${group.minSlotsToDepart} orang berangkat",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = TextGray
-                            )
-                        }
+                        Text(
+                            text = "$filled/$maxSlots orang sudah ikut patungan",
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = FreshGreenDark
+                        )
                     }
                 }
 
@@ -836,7 +818,7 @@ fun PatunganWaitingScreen(
                                 color = FreshGreenDark
                             )
                             Text(
-                                text = "Dana ${formatRupiah(group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp))} aman ditahan di LUDES. Berangkat Jam ${group.departHour}.",
+                                text = "Dana ${formatRupiah(group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp))} aman ditahan di LUDES.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = FreshGreenDark
                             )
@@ -856,7 +838,7 @@ fun PatunganWaitingScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Daftar Tetangga Patungan (${group.areaName})",
+                            text = "Peserta Patungan (${group.areaName}) • Sisa $missing Slot",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = TextBlack
                         )
@@ -923,7 +905,7 @@ fun PatunganWaitingScreen(
                         )
                         Button(
                             onClick = {
-                                val shareText = "Yuk ikut Patungan Gojek LUDES dari ${group.storeName} (${group.productTitle})! Ongkir cuma Rp3.000 ke area ${group.areaName}, berangkat jam ${group.departHour}. Kurang $missing orang lagi!"
+                                val shareText = "Yuk ikut Patungan Gojek LUDES dari ${group.storeName} (${group.productTitle})! Ongkir cuma Rp3.000 ke area ${group.areaName}. Sisa $missing orang lagi!"
                                 val intent = Intent(Intent.ACTION_SEND).apply {
                                     type = "text/plain"
                                     putExtra(Intent.EXTRA_TEXT, shareText)
@@ -972,77 +954,6 @@ fun PatunganWaitingScreen(
                         text = "BATALKAN PATUNGAN (Uang Kembali ke Saldo LUDES)",
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
                     )
-                }
-
-                // Simulasi Alur Patungan untuk Pengujian Cepat
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = BgWhite,
-                    border = BorderStroke(1.dp, SurfaceBorder),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(
-                        modifier = Modifier.padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Simulasi Kondisi Patungan",
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            color = TextBlack
-                        )
-                        OutlinedButton(
-                            onClick = onSimulateNeighborJoin,
-                            shape = RoundedCornerShape(50),
-                            border = BorderStroke(1.dp, FreshGreen),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(min = 48.dp)
-                                .testTag("patungan_sim_neighbor_join")
-                        ) {
-                            Icon(Icons.Filled.TwoWheeler, contentDescription = null, tint = FreshGreenDark, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Simulasi 1 Tetangga Ikut (+1 Slot)",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = FreshGreenDark
-                            )
-                        }
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { onSimulateCutoff(false) },
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, ActionOrange),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .testTag("patungan_sim_depart_now")
-                            ) {
-                                Text(
-                                    text = "Jam Batas: Berangkat",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = ActionOrangeDark
-                                )
-                            }
-                            OutlinedButton(
-                                onClick = { onSimulateCutoff(true) },
-                                shape = RoundedCornerShape(50),
-                                border = BorderStroke(1.dp, LiveRed),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .heightIn(min = 48.dp)
-                                    .testTag("patungan_sim_fail_under_min")
-                            ) {
-                                Text(
-                                    text = "Simulasi Gagal (<3 Org)",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = LiveRed
-                                )
-                            }
-                        }
-                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))

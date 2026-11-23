@@ -75,7 +75,6 @@ import com.example.data.PatunganStatus
 import com.example.data.calculatePatunganSplit
 import com.example.data.formatDistanceKmCompact
 import com.example.data.formatRupiah
-import com.example.ui.components.PatunganRouteMiniMap
 import com.example.ui.components.PrimaryOrangeButton
 import com.example.ui.components.SecondaryGreenButton
 import com.example.ui.components.SubScreenTopBar
@@ -98,38 +97,28 @@ import com.example.ui.theme.TextBlack
 import com.example.ui.theme.TextGray
 
 /**
- * Layar 4: Patungan Berangkat - Status Driver
+ * Layar 4: Detail Status Patungan / Antar Langsung (tanpa peta & tanpa pengaturan berangkat)
  */
 @Composable
 fun PatunganDriverStatusScreen(
     group: PatunganGroupEntity,
     onBack: () -> Unit,
-    onAdvanceStage: () -> Unit,
-    onOpenDriverScreen: () -> Unit,
     onShowMessage: (String) -> Unit
 ) {
     val context = LocalContext.current
-    val stage = DriverStage.entries.firstOrNull { it.name == group.driverStage } ?: DriverStage.MENUJU_TOKO
+    val filled = group.filledSlots
+    val maxSlots = group.maxSlots
+    val remaining = (maxSlots - filled).coerceAtLeast(0)
     val sortedStops = remember(group.membersJson) {
         group.members.sortedBy { it.distanceKmFromStore }
     }
-    val userStopPos = remember(sortedStops) {
-        val idx = sortedStops.indexOfFirst { it.isCurrentUser }
-        if (idx >= 0) idx + 1 else sortedStops.size.coerceAtLeast(1)
-    }
-    val totalStops = sortedStops.size.coerceAtLeast(1)
-    val split = remember(group.bagPriceRp, group.patunganShippingRp) {
-        calculatePatunganSplit(group.bagPriceRp, group.patunganShippingRp)
-    }
-
-    var showRouteDialog by remember { mutableStateOf(false) }
     var showDriverContactDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         containerColor = BgLightGray,
         topBar = {
             SubScreenTopBar(
-                title = "Patungan Berangkat!",
+                title = if (group.isSoloFallbackDelivery) "Detail Antar Langsung" else "Detail Patungan",
                 onBack = onBack
             )
         }
@@ -146,7 +135,7 @@ fun PatunganDriverStatusScreen(
                 modifier = Modifier.widthIn(max = 600.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // Card Info Driver: Pak Agus - Motor B 1234 XYZ - Rating 4.9 - Foto Driver
+                // Ringkasan Produk & Sisa Slot Patungan
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = BgWhite,
@@ -155,266 +144,168 @@ fun PatunganDriverStatusScreen(
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                modifier = Modifier
-                                    .size(58.dp)
-                                    .clip(CircleShape)
-                                    .background(FreshGreenSoft),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.img_avatar_siti),
-                                    contentDescription = "Foto Driver ${group.driverName}",
-                                    contentScale = ContentScale.Crop,
-                                    modifier = Modifier.fillMaxSize()
-                                )
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomEnd)
-                                        .size(22.dp)
-                                        .clip(CircleShape)
-                                        .background(FreshGreen),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.SportsMotorsports,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(13.dp)
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = group.driverName,
-                                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
-                                    color = TextBlack
-                                )
-                                Text(
-                                    text = group.driverPlate,
-                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
-                                    color = TextGray
-                                )
-                            }
-                            Surface(shape = RoundedCornerShape(50), color = StatusAmberSoft) {
-                                Row(
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Star,
-                                        contentDescription = "Rating Driver",
-                                        tint = StarYellow,
-                                        modifier = Modifier.size(16.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        text = "${group.driverRating}",
-                                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
-                                        color = TextBlack
-                                    )
-                                }
-                            }
-                        }
-
-                        // Info urutan & Estimasi
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = FreshGreenSoft,
-                            border = BorderStroke(1.dp, FreshGreenBorder),
-                            modifier = Modifier.fillMaxWidth()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(
-                                modifier = Modifier.padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            Surface(
+                                shape = RoundedCornerShape(50),
+                                color = if (group.isSoloFallbackDelivery || remaining == 0) FreshGreenSoft else ActionOrangeSoft
                             ) {
                                 Text(
-                                    text = if (group.isSoloFallbackDelivery) {
-                                        "Antar langsung 1 tujuan dari ${group.storeName}."
-                                    } else {
-                                        "Kantong kamu No. $userStopPos dari $totalStops. Driver antar searah 1 rute."
+                                    text = when {
+                                        group.isSoloFallbackDelivery -> "Antar Langsung"
+                                        remaining == 0 -> "Kuota Penuh ($filled/$maxSlots)"
+                                        else -> "Sisa $remaining Orang Lagi ($filled/$maxSlots)"
                                     },
                                     style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                                    color = FreshGreenDark
+                                    color = if (group.isSoloFallbackDelivery || remaining == 0) FreshGreenDark else ActionOrangeDark,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp)
                                 )
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Filled.AccessTime,
-                                        contentDescription = null,
-                                        tint = FreshGreenDark,
-                                        modifier = Modifier.size(15.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = if (stage == DriverStage.SAMPAI) {
-                                            "Sampai! Kantong sudah diterima."
-                                        } else {
-                                            "Sampai ${group.etaMinutes} menit lagi"
-                                        },
-                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                                        color = FreshGreenDark
-                                    )
-                                }
+                            }
+                            Surface(shape = RoundedCornerShape(50), color = FreshGreenSoft) {
+                                Text(
+                                    text = "Area ${group.areaName}",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = FreshGreenDark,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
                             }
                         }
 
-                        // Status 4 Tahap Stepper
                         Text(
-                            text = "Status Pengantaran (4 Tahap)",
-                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            text = "${group.productTitle} — ${group.storeName}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.ExtraBold),
                             color = TextBlack
                         )
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            DriverStage.entries.forEach { step ->
-                                val isDone = stage.stepIndex > step.stepIndex || stage == DriverStage.SAMPAI
-                                val isCurrent = stage == step
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = when {
-                                        isCurrent -> ActionOrangeSoft
-                                        isDone -> FreshGreenSoft
-                                        else -> BgLightGray
-                                    },
-                                    border = BorderStroke(
-                                        1.dp,
-                                        when {
-                                            isCurrent -> ActionOrangeBorder
-                                            isDone -> FreshGreenBorder
-                                            else -> SurfaceBorder
-                                        }
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
+                        Text(
+                            text = if (group.isSoloFallbackDelivery) {
+                                "Pesanan antar langsung sedang diproses oleh driver ke alamat kamu di area ${group.areaName}."
+                            } else if (remaining == 0) {
+                                "Kuota patungan sudah lengkap $filled/$maxSlots orang! Pesanan sedang diproses untuk pengantaran ke area ${group.areaName}."
+                            } else {
+                                "$filled/$maxSlots orang sudah ikut. Sisa $remaining orang lagi!"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextGray
+                        )
+                    }
+                }
+
+                // Card Info Driver singkat (tanpa peta / tanpa langkah simulator)
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = BgWhite,
+                    border = BorderStroke(1.dp, SurfaceBorder),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(CircleShape)
+                                .background(FreshGreenSoft),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.drawable.img_avatar_siti),
+                                contentDescription = "Foto Driver ${group.driverName}",
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "${group.driverName} (${group.driverPlate})",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.ExtraBold),
+                                color = TextBlack
+                            )
+                            Text(
+                                text = "Rating ${group.driverRating} • Total bayar ${formatRupiah(group.userTotalPaidRp)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TextGray
+                            )
+                        }
+                    }
+                }
+
+                // Daftar Slot Patungan (jika patungan bersama)
+                if (!group.isSoloFallbackDelivery) {
+                    Surface(
+                        shape = RoundedCornerShape(20.dp),
+                        color = BgWhite,
+                        border = BorderStroke(1.dp, SurfaceBorder),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Daftar Peserta ($filled/$maxSlots • Sisa $remaining orang lagi)",
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                color = TextBlack
+                            )
+                            for (slot in 1..maxSlots) {
+                                val member = group.members.getOrNull(slot - 1)
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(
-                                                imageVector = Icons.Filled.CheckCircle,
-                                                contentDescription = null,
-                                                tint = when {
-                                                    isDone -> FreshGreen
-                                                    isCurrent -> ActionOrange
-                                                    else -> TextGray.copy(alpha = 0.4f)
-                                                },
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                            Spacer(modifier = Modifier.width(10.dp))
+                                    Text(
+                                        text = if (member != null) {
+                                            "$slot. ${member.aliasName} - ${member.areaDetail}"
+                                        } else {
+                                            "$slot. Slot Kosong"
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium.copy(
+                                            fontWeight = if (member?.isCurrentUser == true) FontWeight.Bold else FontWeight.Normal
+                                        ),
+                                        color = if (member != null) TextBlack else TextGray
+                                    )
+                                    if (member?.isCurrentUser == true) {
+                                        Surface(shape = RoundedCornerShape(50), color = ActionOrangeSoft) {
                                             Text(
-                                                text = "${step.stepIndex + 1}. ${step.label}",
-                                                style = MaterialTheme.typography.bodyMedium.copy(
-                                                    fontWeight = if (isCurrent || isDone) FontWeight.Bold else FontWeight.Normal
-                                                ),
-                                                color = if (isCurrent || isDone) TextBlack else TextGray
-                                            )
-                                        }
-                                        if (isCurrent) {
-                                            Text(
-                                                text = "Saat Ini",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.ExtraBold),
-                                                color = ActionOrangeDark
+                                                text = "Kamu",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = ActionOrangeDark,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                             )
                                         }
                                     }
                                 }
                             }
                         }
-
-                        if (stage != DriverStage.SAMPAI) {
-                            SecondaryGreenButton(
-                                text = "Simulasi Lanjut Tahap Driver",
-                                onClick = onAdvanceStage,
-                                testTag = "patungan_advance_driver_stage",
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        }
                     }
                 }
 
-                // Peta Kecil: Titik driver bergerak dari toko ke komplek
-                PatunganRouteMiniMap(
-                    storeName = group.storeName,
-                    areaName = group.areaName,
-                    members = sortedStops,
-                    driverStage = stage
-                )
-
-                // Tombol HUBUNGI DRIVER & LIHAT RUTE
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    Button(
-                        onClick = { showDriverContactDialog = true },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = FreshGreen,
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 50.dp)
-                            .testTag("patungan_contact_driver_button")
-                    ) {
-                        Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "HUBUNGI DRIVER",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
-                            maxLines = 1
-                        )
-                    }
-
-                    Button(
-                        onClick = { showRouteDialog = true },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = ActionOrange,
-                            contentColor = Color.White
-                        ),
-                        modifier = Modifier
-                            .weight(1f)
-                            .heightIn(min = 50.dp)
-                            .testTag("patungan_view_route_button")
-                    ) {
-                        Icon(Icons.Filled.Route, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "LIHAT RUTE",
-                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold),
-                            maxLines = 1
-                        )
-                    }
-                }
-
-                // Aturan Pembagian Uang Patungan (Section 7)
-                PatunganMoneySplitCard(
-                    split = split,
-                    isSettled = stage == DriverStage.SAMPAI
-                )
-
-                // Pintasan ke Layar Driver / Kurir Patungan (Section 6)
-                OutlinedButton(
-                    onClick = onOpenDriverScreen,
+                Button(
+                    onClick = { showDriverContactDialog = true },
                     shape = RoundedCornerShape(50),
-                    border = BorderStroke(1.dp, FreshGreen),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = FreshGreen,
+                        contentColor = Color.White
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .testTag("open_driver_patungan_from_status")
+                        .heightIn(min = 50.dp)
+                        .testTag("patungan_contact_driver_button")
                 ) {
-                    Icon(Icons.Filled.TwoWheeler, contentDescription = null, tint = FreshGreenDark, modifier = Modifier.size(18.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(Icons.Filled.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Buka Layar Driver Patungan (${sortedStops.size} Kantong)",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = FreshGreenDark
+                        text = "HUBUNGI DRIVER",
+                        style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.ExtraBold)
                     )
                 }
 
@@ -423,54 +314,13 @@ fun PatunganDriverStatusScreen(
         }
     }
 
-    if (showRouteDialog) {
-        AlertDialog(
-            onDismissRequest = { showRouteDialog = false },
-            containerColor = BgWhite,
-            title = { Text("Rute Antar Searah • ${group.areaName}") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Titik Ambil: ${group.storeName} (${group.storeAddress})",
-                        style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                        color = FreshGreenDark
-                    )
-                    sortedStops.forEachIndexed { idx, member ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${idx + 1}. ${member.aliasName} - ${member.addressLabel}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = if (member.isCurrentUser) FontWeight.Bold else FontWeight.Normal
-                                ),
-                                color = if (member.isCurrentUser) ActionOrangeDark else TextBlack,
-                                modifier = Modifier.weight(1f)
-                            )
-                            Text(
-                                text = if (member.isDelivered) "Sampai" else formatDistanceKmCompact(member.distanceKmFromStore),
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (member.isDelivered) FreshGreenDark else TextGray
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showRouteDialog = false }) { Text("Tutup") }
-            }
-        )
-    }
-
     if (showDriverContactDialog) {
         AlertDialog(
             onDismissRequest = { showDriverContactDialog = false },
             containerColor = BgWhite,
             title = { Text("Hubungi ${group.driverName}") },
             text = {
-                Text("${group.driverPlate} • Rating ${group.driverRating}\nDriver sedang mengantar ${sortedStops.size} kantong searah ke komplek ${group.areaName}.")
+                Text("${group.driverPlate} • Rating ${group.driverRating}\nPesanan untuk area ${group.areaName} (${sortedStops.size} kantong).")
             },
             confirmButton = {
                 Button(
@@ -850,14 +700,6 @@ fun DriverPatunganScreen(
                         }
                     }
                 }
-
-                // Peta Rute Searah (dari rumah paling dekat ke paling jauh)
-                PatunganRouteMiniMap(
-                    storeName = group.storeName,
-                    areaName = group.areaName,
-                    members = sortedStops,
-                    driverStage = stage
-                )
 
                 // Daftar Kantong dengan Label Nama + Urutan Antar Searah
                 Surface(

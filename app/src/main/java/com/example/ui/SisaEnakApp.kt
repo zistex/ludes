@@ -880,29 +880,6 @@ fun SisaEnakApp(
                                 viewModel.cancelPatungan(group.id) {
                                     navController.popBackStack(Routes.BERANDA, inclusive = false)
                                 }
-                            },
-                            onSimulateNeighborJoin = {
-                                viewModel.simulateNeighborJoin(group.id) {
-                                    navController.navigate(Routes.patunganStatus(group.id)) {
-                                        popUpTo(Routes.BERANDA)
-                                    }
-                                }
-                            },
-                            onSimulateCutoff = { forceFail ->
-                                viewModel.simulatePatunganCutoff(
-                                    groupId = group.id,
-                                    forceFailUnderMin = forceFail,
-                                    onDeparted = {
-                                        navController.navigate(Routes.patunganStatus(group.id)) {
-                                            popUpTo(Routes.BERANDA)
-                                        }
-                                    },
-                                    onFailed = {
-                                        navController.navigate(Routes.patunganFailed(group.id)) {
-                                            popUpTo(Routes.BERANDA)
-                                        }
-                                    }
-                                )
                             }
                         )
                     }
@@ -918,8 +895,6 @@ fun SisaEnakApp(
                         PatunganDriverStatusScreen(
                             group = group,
                             onBack = { navController.popBackStack() },
-                            onAdvanceStage = { viewModel.advanceDriverStage(group.id) },
-                            onOpenDriverScreen = { navController.navigate(Routes.DRIVER_PATUNGAN) },
                             onShowMessage = { msg -> viewModel.showMessage(msg) }
                         )
                     }

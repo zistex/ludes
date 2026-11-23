@@ -248,11 +248,13 @@ private fun PatunganOrderListCard(
     group: PatunganGroupEntity,
     onClick: () -> Unit
 ) {
-    val statusLabel = when (group.status) {
-        PatunganStatus.OPEN.name -> "Menunggu Teman (${group.filledSlots}/${group.maxSlots})"
-        PatunganStatus.BERANGKAT.name -> "Patungan Berangkat!"
-        PatunganStatus.GAGAL_PENUH.name -> "Patungan Belum Penuh"
-        PatunganStatus.SELESAI.name -> "Selesai Diantar"
+    val remaining = (group.maxSlots - group.filledSlots).coerceAtLeast(0)
+    val statusLabel = when {
+        group.isSoloFallbackDelivery -> "Antar Langsung"
+        group.status == PatunganStatus.OPEN.name -> "Sisa $remaining Orang Lagi (${group.filledSlots}/${group.maxSlots})"
+        group.status == PatunganStatus.BERANGKAT.name -> "Kuota Penuh (${group.filledSlots}/${group.maxSlots})"
+        group.status == PatunganStatus.GAGAL_PENUH.name -> "Patungan Belum Penuh"
+        group.status == PatunganStatus.SELESAI.name -> "Selesai Diantar"
         else -> "Patungan Gojek"
     }
     val badgeBg = when (group.status) {
@@ -291,7 +293,11 @@ private fun PatunganOrderListCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "Patungan Gojek • Area ${group.areaName}",
+                        text = if (group.isSoloFallbackDelivery) {
+                            "Bayar Full • Area ${group.areaName}"
+                        } else {
+                            "Patungan Gojek • Area ${group.areaName}"
+                        },
                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
                         color = ActionOrangeDark
                     )
@@ -311,8 +317,13 @@ private fun PatunganOrderListCard(
                 style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                 color = TextBlack
             )
+            val paid = group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp)
             Text(
-                text = "Berangkat jam ${group.departHour} • Total bayar ${formatRupiah(group.userTotalPaidRp.takeIf { it > 0 } ?: (group.bagPriceRp + group.patunganShippingRp))}",
+                text = if (!group.isSoloFallbackDelivery && group.status == PatunganStatus.OPEN.name) {
+                    "Sisa $remaining orang lagi • Total bayar ${formatRupiah(paid)}"
+                } else {
+                    "Total bayar ${formatRupiah(paid)}"
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = TextGray
             )

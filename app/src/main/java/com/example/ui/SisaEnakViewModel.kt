@@ -686,9 +686,9 @@ class SisaEnakViewModel(application: Application) : AndroidViewModel(application
                     "Slot patungan sudah penuh."
                 }
             } else if (updated.status == PatunganStatus.BERANGKAT.name) {
-                snackbarMessage.value = "Patungan 5/5 penuh! Driver Pak Agus segera berangkat."
+                snackbarMessage.value = "Patungan 5/5 penuh! Pesananmu sedang diproses."
             } else {
-                snackbarMessage.value = "Pembayaran ditahan di LUDES. Menunggu teman patungan!"
+                snackbarMessage.value = "Berhasil ikut patungan! Sisa ${updated.remainingSlots} orang lagi."
             }
             onResult(updated)
         }

@@ -521,7 +521,6 @@ fun ProductDetailScreen(
                     val filled = patunganGroup?.filledSlots ?: 3
                     val maxSlots = patunganGroup?.maxSlots ?: 5
                     val remaining = (maxSlots - filled).coerceAtLeast(0)
-                    val departHour = patunganGroup?.departHour ?: "19.30"
                     val userJoined = patunganGroup?.userJoined == true
                     val isFull = remaining <= 0 || (patunganGroup != null && patunganGroup.status != PatunganStatus.OPEN.name && !userJoined)
                     val patunganEnabled = (product.stock > 0 || userJoined) && (!isFull || userJoined)
@@ -581,14 +580,14 @@ fun ProductDetailScreen(
                                 ) {
                                     Text(
                                         text = when {
-                                            userJoined && patunganGroup?.status == PatunganStatus.BERANGKAT.name ->
-                                                "Patungan 5/5 Siap! Driver sedang mengantar ke $areaName"
+                                            userJoined && remaining == 0 ->
+                                                "Patungan $filled/$maxSlots penuh! Pesananmu sedang diproses"
                                             userJoined ->
-                                                "Kamu sudah ikut ($filled/$maxSlots)! Tinggal $remaining orang lagi, ayo siap angkut!"
+                                                "Kamu sudah ikut ($filled/$maxSlots)! Tinggal $remaining orang lagi"
                                             isFull ->
-                                                "Patungan Gojek $filled/$maxSlots sudah penuh untuk jam $departHour"
+                                                "Patungan Gojek $filled/$maxSlots sudah penuh"
                                             else ->
-                                                "Tinggal $remaining lagi dari $maxSlots orang, ayo siap angkut! Ongkir cuma Rp3.000"
+                                                "Tinggal $remaining orang lagi dari $maxSlots slot, ayo siap angkut! Ongkir cuma Rp3.000"
                                         },
                                         style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.ExtraBold),
                                         color = if (isFull && !userJoined) TextGray else ActionOrangeDark
@@ -603,7 +602,11 @@ fun ProductDetailScreen(
                                             .clip(RoundedCornerShape(50))
                                     )
                                     Text(
-                                        text = "$filled/$maxSlots orang sudah ikut • Berangkat jam $departHour • Radius max 1km",
+                                        text = if (remaining > 0) {
+                                            "$filled/$maxSlots orang sudah ikut • Sisa $remaining orang lagi • Area $areaName"
+                                        } else {
+                                            "$filled/$maxSlots orang sudah ikut • Area $areaName"
+                                        },
                                         style = MaterialTheme.typography.bodySmall,
                                         color = TextGray
                                     )
